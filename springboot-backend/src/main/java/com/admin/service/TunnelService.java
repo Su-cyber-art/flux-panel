@@ -7,6 +7,8 @@ import com.admin.common.lang.R;
 import com.admin.entity.Tunnel;
 import com.baomidou.mybatisplus.extension.service.IService;
 
+import java.util.List;
+
 /**
  * <p>
  * 隧道服务类
@@ -56,4 +58,12 @@ public interface TunnelService extends IService<Tunnel> {
      * @return 诊断结果
      */
     R diagnoseTunnel(Long tunnelId);
+
+    List<Long> getChainNodeIds(Long tunnelId);
+
+    List<Long> getRelayNodeIds(Tunnel tunnel);
+
+    List<Long> getPathNodeIds(Tunnel tunnel);
+
+    long countChainNodeReferences(Long nodeId);
 }

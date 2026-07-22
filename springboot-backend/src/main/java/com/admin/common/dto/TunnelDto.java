@@ -8,6 +8,8 @@ import javax.validation.constraints.Max;
 import javax.validation.constraints.DecimalMin;
 import javax.validation.constraints.DecimalMax;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 public class TunnelDto {
@@ -20,6 +22,9 @@ public class TunnelDto {
 
     // 出口节点ID，当type=1时可以为空，会自动设置为入口节点ID
     private Long outNodeId;
+
+    // Ordered relay nodes between the entry and exit nodes.
+    private List<Long> chainNodeIds = new ArrayList<>();
     
     @NotNull(message = "隧道类型不能为空")
     private Integer type;
@@ -42,4 +47,4 @@ public class TunnelDto {
     
     // UDP监听地址，默认为0.0.0.0
     private String udpListenAddr = "0.0.0.0";
-} 
+}

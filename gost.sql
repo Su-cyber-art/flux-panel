@@ -49,6 +49,22 @@ CREATE TABLE `forward` (
 -- --------------------------------------------------------
 
 --
+-- 表的结构 `forward_hop_port`
+--
+
+CREATE TABLE `forward_hop_port` (
+  `id` int(10) NOT NULL,
+  `forward_id` int(10) NOT NULL,
+  `node_id` int(10) NOT NULL,
+  `hop_order` int(10) NOT NULL,
+  `port` int(10) NOT NULL,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
 -- 表的结构 `node`
 --
 
@@ -124,6 +140,21 @@ CREATE TABLE `tunnel` (
   `created_time` bigint(20) NOT NULL,
   `updated_time` bigint(20) NOT NULL,
   `status` int(10) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
+
+--
+-- 表的结构 `tunnel_hop`
+--
+
+CREATE TABLE `tunnel_hop` (
+  `id` int(10) NOT NULL,
+  `tunnel_id` int(10) NOT NULL,
+  `node_id` int(10) NOT NULL,
+  `hop_order` int(10) NOT NULL,
+  `created_time` bigint(20) NOT NULL,
+  `updated_time` bigint(20) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- --------------------------------------------------------
@@ -205,6 +236,12 @@ INSERT INTO `vite_config` (`id`, `name`, `value`, `time`) VALUES
 ALTER TABLE `forward`
   ADD PRIMARY KEY (`id`);
 
+ALTER TABLE `forward_hop_port`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_forward_hop_node` (`forward_id`,`node_id`),
+  ADD UNIQUE KEY `uk_forward_hop_order` (`forward_id`,`hop_order`),
+  ADD UNIQUE KEY `uk_node_hop_port` (`node_id`,`port`);
+
 --
 -- 表的索引 `node`
 --
@@ -228,6 +265,12 @@ ALTER TABLE `statistics_flow`
 --
 ALTER TABLE `tunnel`
   ADD PRIMARY KEY (`id`);
+
+ALTER TABLE `tunnel_hop`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uk_tunnel_hop_order` (`tunnel_id`,`hop_order`),
+  ADD UNIQUE KEY `uk_tunnel_hop_node` (`tunnel_id`,`node_id`),
+  ADD KEY `idx_tunnel_hop_node` (`node_id`);
 
 --
 -- 表的索引 `user`
@@ -258,6 +301,9 @@ ALTER TABLE `vite_config`
 ALTER TABLE `forward`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
+ALTER TABLE `forward_hop_port`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
 --
 -- 使用表AUTO_INCREMENT `node`
 --
@@ -282,6 +328,9 @@ ALTER TABLE `statistics_flow`
 ALTER TABLE `tunnel`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
+ALTER TABLE `tunnel_hop`
+  MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
 --
 -- 使用表AUTO_INCREMENT `user`
 --
@@ -299,6 +348,12 @@ ALTER TABLE `user_tunnel`
 --
 ALTER TABLE `vite_config`
   MODIFY `id` int(10) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+ALTER TABLE `forward_hop_port`
+  ADD CONSTRAINT `fk_forward_hop_forward` FOREIGN KEY (`forward_id`) REFERENCES `forward` (`id`) ON DELETE CASCADE;
+
+ALTER TABLE `tunnel_hop`
+  ADD CONSTRAINT `fk_tunnel_hop_tunnel` FOREIGN KEY (`tunnel_id`) REFERENCES `tunnel` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

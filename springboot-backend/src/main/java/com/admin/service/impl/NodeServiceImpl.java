@@ -60,6 +60,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     /** 隧道使用检查相关消息 */
     private static final String ERROR_IN_NODE_IN_USE = "该节点还有 %d 个隧道作为入口节点在使用，请先删除相关隧道";
     private static final String ERROR_OUT_NODE_IN_USE = "该节点还有 %d 个隧道作为出口节点在使用，请先删除相关隧道";
+    private static final String ERROR_CHAIN_NODE_IN_USE = "该节点还有 %d 个多跳隧道作为中转节点在使用，请先删除相关隧道";
     
     /** 端口范围验证相关消息 */
     private static final String ERROR_PORT_STA_REQUIRED = "起始端口不能为空";
@@ -290,7 +291,16 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         }
 
         // 检查出口节点使用情况
-        return checkOutNodeUsage(nodeId);
+        R outNodeCheckResult = checkOutNodeUsage(nodeId);
+        if (outNodeCheckResult.getCode() != 0) {
+            return outNodeCheckResult;
+        }
+
+        long chainNodeCount = tunnelService.countChainNodeReferences(nodeId);
+        if (chainNodeCount > 0) {
+            return R.err(String.format(ERROR_CHAIN_NODE_IN_USE, chainNodeCount));
+        }
+        return R.ok();
     }
 
     /**

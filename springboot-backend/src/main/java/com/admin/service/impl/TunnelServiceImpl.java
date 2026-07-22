@@ -17,6 +17,8 @@ import com.admin.mapper.UserTunnelMapper;
 import com.admin.service.ForwardService;
 import com.admin.service.NodeService;
 import com.admin.service.TunnelService;
+import com.admin.service.TunnelHopService;
+import com.admin.service.ForwardHopPortService;
 import com.admin.service.UserTunnelService;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -25,6 +27,7 @@ import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.math.BigDecimal;
@@ -97,6 +100,12 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     @Resource
     UserTunnelService userTunnelService;
 
+    @Resource
+    TunnelHopService tunnelHopService;
+
+    @Resource
+    ForwardHopPortService forwardHopPortService;
+
     // ========== 公共接口实现 ==========
 
     /**
@@ -107,6 +116,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      * @return 创建结果响应
      */
     @Override
+    @Transactional
     public R createTunnel(TunnelDto tunnelDto) {
         // 1. 验证隧道名称唯一性
         R nameValidationResult = validateTunnelNameUniqueness(tunnelDto.getName());
@@ -119,6 +129,12 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             R tunnelForwardValidationResult = validateTunnelForwardCreate(tunnelDto);
             if (tunnelForwardValidationResult.getCode() != 0) {
                 return tunnelForwardValidationResult;
+            }
+
+            R pathValidationResult = validateTunnelPath(
+                    tunnelDto.getInNodeId(), tunnelDto.getOutNodeId(), tunnelDto.getChainNodeIds());
+            if (pathValidationResult.getCode() != 0) {
+                return pathValidationResult;
             }
         }
 
@@ -140,7 +156,13 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         // 6. 设置默认属性并保存
         setDefaultTunnelProperties(tunnel);
         boolean result = this.save(tunnel);
-        
+        if (result) {
+            List<Long> chainNodeIds = tunnelDto.getType() == TUNNEL_TYPE_TUNNEL_FORWARD
+                    ? normalizeChainNodeIds(tunnelDto.getChainNodeIds())
+                    : Collections.emptyList();
+            tunnelHopService.replaceTunnelHops(tunnel.getId(), chainNodeIds);
+        }
+
         return result ? R.ok(SUCCESS_CREATE_MSG) : R.err(ERROR_CREATE_MSG);
     }
 
@@ -152,6 +174,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     @Override
     public R getAllTunnels() {
         List<Tunnel> tunnelList = this.list();
+        enrichChainNodeIds(tunnelList);
         return R.ok(tunnelList);
     }
 
@@ -162,6 +185,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      * @return 更新结果响应
      */
     @Override
+    @Transactional
     public R updateTunnel(TunnelUpdateDto tunnelUpdateDto) {
         // 1. 验证隧道是否存在
         Tunnel existingTunnel = this.getById(tunnelUpdateDto.getId());
@@ -173,6 +197,25 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         R nameValidationResult = validateTunnelNameUniquenessForUpdate(tunnelUpdateDto.getName(), tunnelUpdateDto.getId());
         if (nameValidationResult.getCode() != 0) {
             return nameValidationResult;
+        }
+
+        List<Long> existingChainNodeIds = getChainNodeIds(existingTunnel.getId());
+        List<Long> requestedChainNodeIds = tunnelUpdateDto.getChainNodeIds() == null
+                ? existingChainNodeIds
+                : normalizeChainNodeIds(tunnelUpdateDto.getChainNodeIds());
+        boolean pathChanged = !existingChainNodeIds.equals(requestedChainNodeIds);
+        if (existingTunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD && pathChanged) {
+            R pathValidationResult = validateTunnelPath(
+                    existingTunnel.getInNodeId(), existingTunnel.getOutNodeId(), requestedChainNodeIds);
+            if (pathValidationResult.getCode() != 0) {
+                return pathValidationResult;
+            }
+            if (pathChanged && forwardService.count(new QueryWrapper<Forward>()
+                    .eq("tunnel_id", existingTunnel.getId())) > 0) {
+                return R.err("该隧道已有转发，修改多跳路径前请先删除相关转发");
+            }
+        } else if (existingTunnel.getType() != TUNNEL_TYPE_TUNNEL_FORWARD && !requestedChainNodeIds.isEmpty()) {
+            return R.err("端口转发模式不支持中转节点");
         }
         int up = 0;
         if (!Objects.equals(existingTunnel.getTcpListenAddr(), tunnelUpdateDto.getTcpListenAddr()) ||
@@ -191,10 +234,13 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         existingTunnel.setTrafficRatio(tunnelUpdateDto.getTrafficRatio());
         existingTunnel.setProtocol(tunnelUpdateDto.getProtocol());
         existingTunnel.setInterfaceName(tunnelUpdateDto.getInterfaceName());
+        existingTunnel.setUpdatedTime(System.currentTimeMillis());
         this.updateById(existingTunnel);
+        if (pathChanged) {
+            tunnelHopService.replaceTunnelHops(existingTunnel.getId(), requestedChainNodeIds);
+        }
         int err = 0;
         if (up != 0){
-            System.out.println("123123");
             List<Forward> tunnel = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelUpdateDto.getId()));
             if (!tunnel.isEmpty()) {
                 for (Forward forward : tunnel) {
@@ -229,6 +275,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
      * @return 删除结果响应
      */
     @Override
+    @Transactional
     public R deleteTunnel(Long id) {
         // 1. 验证隧道是否存在
         if (!isTunnelExists(id)) {
@@ -262,6 +309,26 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         // 转换为DTO并返回
         List<TunnelListDto> tunnelDtos = convertToTunnelListDtos(tunnelEntities);
         return R.ok(tunnelDtos);
+    }
+
+    @Override
+    public List<Long> getChainNodeIds(Long tunnelId) {
+        return tunnelHopService.listNodeIds(tunnelId);
+    }
+
+    @Override
+    public List<Long> getRelayNodeIds(Tunnel tunnel) {
+        return tunnelHopService.listRelayNodeIds(tunnel);
+    }
+
+    @Override
+    public List<Long> getPathNodeIds(Tunnel tunnel) {
+        return tunnelHopService.listPathNodeIds(tunnel);
+    }
+
+    @Override
+    public long countChainNodeReferences(Long nodeId) {
+        return tunnelHopService.countByNodeId(nodeId);
     }
 
     // ========== 私有辅助方法 ==========
@@ -323,6 +390,49 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             return R.err(ERROR_OUT_NODE_REQUIRED);
         }
         return R.ok();
+    }
+
+    private R validateTunnelPath(Long inNodeId, Long outNodeId, List<Long> chainNodeIds) {
+        List<Long> relays = normalizeChainNodeIds(chainNodeIds);
+        Set<Long> uniqueNodeIds = new HashSet<>();
+        if (inNodeId == null || !uniqueNodeIds.add(inNodeId)) {
+            return R.err(ERROR_IN_NODE_NOT_FOUND);
+        }
+
+        for (int i = 0; i < relays.size(); i++) {
+            Long nodeId = relays.get(i);
+            if (nodeId == null) {
+                return R.err("第 " + (i + 1) + " 跳中转节点不能为空");
+            }
+            if (!uniqueNodeIds.add(nodeId)) {
+                return R.err("同一节点不能在链路中重复使用");
+            }
+            Node node = nodeService.getById(nodeId);
+            if (node == null) {
+                return R.err("第 " + (i + 1) + " 跳中转节点不存在");
+            }
+            if (node.getStatus() != NODE_STATUS_ONLINE) {
+                return R.err("第 " + (i + 1) + " 跳中转节点当前离线");
+            }
+        }
+
+        if (outNodeId == null) {
+            return R.err(ERROR_OUT_NODE_REQUIRED);
+        }
+        if (!uniqueNodeIds.add(outNodeId)) {
+            return R.err("同一节点不能在链路中重复使用");
+        }
+        return R.ok();
+    }
+
+    private List<Long> normalizeChainNodeIds(List<Long> chainNodeIds) {
+        return chainNodeIds == null ? Collections.emptyList() : new ArrayList<>(chainNodeIds);
+    }
+
+    private void enrichChainNodeIds(List<Tunnel> tunnels) {
+        for (Tunnel tunnel : tunnels) {
+            tunnel.setChainNodeIds(getChainNodeIds(tunnel.getId()));
+        }
     }
 
     /**
@@ -639,35 +749,46 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             return R.err(ERROR_TUNNEL_NOT_FOUND);
         }
 
-        // 2. 获取入口和出口节点信息
-        Node inNode = nodeService.getById(tunnel.getInNodeId());
-        if (inNode == null) {
-            return R.err(ERROR_IN_NODE_NOT_FOUND);
-        }
-
-        Node outNode = null;
-        if (tunnel.getType() == TUNNEL_TYPE_TUNNEL_FORWARD) {
-            outNode = nodeService.getById(tunnel.getOutNodeId());
-            if (outNode == null) {
-                return R.err(ERROR_OUT_NODE_NOT_FOUND);
-            }
-        }
-
         List<DiagnosisResult> results = new ArrayList<>();
 
-        // 3. 根据隧道类型执行不同的诊断策略
         if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
-            // 端口转发：只给入口节点发送诊断指令，TCP ping谷歌443端口
+            Node inNode = nodeService.getById(tunnel.getInNodeId());
+            if (inNode == null) {
+                return R.err(ERROR_IN_NODE_NOT_FOUND);
+            }
             DiagnosisResult inResult = performTcpPingDiagnosisWithConnectionCheck(inNode, "www.google.com", 443, "入口->外网");
             results.add(inResult);
         } else {
-            // 隧道转发：入口TCP ping出口，出口TCP ping谷歌443端口
-            int outNodePort = getOutNodeTcpPort(tunnel.getId());
-            DiagnosisResult inToOutResult = performTcpPingDiagnosisWithConnectionCheck(inNode, outNode.getServerIp(), outNodePort, "入口->出口");
-            results.add(inToOutResult);
+            List<Long> pathNodeIds = getPathNodeIds(tunnel);
+            List<Node> pathNodes = new ArrayList<>();
+            for (Long nodeId : pathNodeIds) {
+                Node node = nodeService.getById(nodeId);
+                if (node == null) {
+                    return R.err("链路节点不存在: " + nodeId);
+                }
+                pathNodes.add(node);
+            }
 
-            // 先检查出口节点的真实连接状态，然后再进行诊断
-            DiagnosisResult outToExternalResult = performTcpPingDiagnosisWithConnectionCheck(outNode, "www.google.com", 443, "出口->外网");
+            Map<Long, Integer> relayPorts = new HashMap<>();
+            List<Forward> forwards = forwardService.list(new QueryWrapper<Forward>()
+                    .eq("tunnel_id", tunnelId).eq("status", TUNNEL_STATUS_ACTIVE).last("LIMIT 1"));
+            if (!forwards.isEmpty()) {
+                Forward forward = forwards.get(0);
+                relayPorts.putAll(forwardHopPortService.getPortMap(forward.getId()));
+                relayPorts.putIfAbsent(tunnel.getOutNodeId(), forward.getOutPort());
+            }
+
+            for (int i = 0; i < pathNodes.size() - 1; i++) {
+                Node source = pathNodes.get(i);
+                Node target = pathNodes.get(i + 1);
+                int targetPort = relayPorts.getOrDefault(target.getId(), 22);
+                results.add(performTcpPingDiagnosisWithConnectionCheck(
+                        source, target.getServerIp(), targetPort, source.getName() + "->" + target.getName()));
+            }
+
+            Node outNode = pathNodes.get(pathNodes.size() - 1);
+            DiagnosisResult outToExternalResult = performTcpPingDiagnosisWithConnectionCheck(
+                    outNode, "www.google.com", 443, "出口->外网");
             results.add(outToExternalResult);
         }
 
@@ -676,6 +797,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         diagnosisReport.put("tunnelId", tunnelId);
         diagnosisReport.put("tunnelName", tunnel.getName());
         diagnosisReport.put("tunnelType", tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD ? "端口转发" : "隧道转发");
+        diagnosisReport.put("pathNodeIds", getPathNodeIds(tunnel));
         diagnosisReport.put("results", results);
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 

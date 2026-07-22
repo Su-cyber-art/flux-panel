@@ -10,6 +10,7 @@ import javax.validation.constraints.Max;
 import javax.validation.constraints.DecimalMin;
 import javax.validation.constraints.DecimalMax;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class TunnelUpdateDto {
@@ -41,4 +42,7 @@ public class TunnelUpdateDto {
 
     @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String interfaceName;
-} 
+
+    // Null keeps the existing path; an empty list removes all relay nodes.
+    private List<Long> chainNodeIds;
+}

@@ -298,8 +298,6 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
             }
 
             Node inNode = nodeService.getById(tunnel.getInNodeId());
-            Node outNode = nodeService.getById(tunnel.getOutNodeId());
-            
             String serviceName = buildServiceName(forward.getId(), Long.valueOf(userId), userTunnelId);
             
             // 1. 先删除主服务
@@ -311,17 +309,19 @@ public class UserTunnelServiceImpl extends ServiceImpl<UserTunnelMapper, UserTun
                 }
             }
             
-            // 2. 如果是隧道转发，删除远端服务
-            if (tunnel.getType() == 1 && outNode != null && !outNode.getId().equals(inNode != null ? inNode.getId() : null)) {
-                try {
-                    GostUtil.DeleteRemoteService(outNode.getId(), serviceName);
-                } catch (Exception e) {
-                    // 远端服务删除失败，记录但继续
+            // 2. 如果是隧道转发，删除每一跳的远端服务
+            if (tunnel.getType() == 2) {
+                for (Long relayNodeId : tunnelService.getRelayNodeIds(tunnel)) {
+                    try {
+                        GostUtil.DeleteRemoteService(relayNodeId, serviceName);
+                    } catch (Exception e) {
+                        // 远端服务删除失败，记录但继续
+                    }
                 }
             }
             
             // 3. 如果是隧道转发，最后删除转发链
-            if (tunnel.getType() == 1 && inNode != null) {
+            if (tunnel.getType() == 2 && inNode != null) {
                 try {
                     GostUtil.DeleteChains(inNode.getId(), serviceName);
                 } catch (Exception e) {

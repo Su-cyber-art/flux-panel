@@ -213,6 +213,10 @@ public class FlowController extends BaseController {
      * 处理流量数据的核心逻辑
      */
     private String processFlowData(FlowDto flowDataList) {
+        // 每个远端跳点都会观察到同一份链路流量，只按入口 TCP/UDP 服务计费。
+        if (flowDataList.getN() == null || flowDataList.getN().endsWith("_tls")) {
+            return SUCCESS_RESPONSE;
+        }
         String[] serviceIds = parseServiceName(flowDataList.getN());
         String forwardId = serviceIds[0];
         String userId = serviceIds[1];
@@ -305,7 +309,9 @@ public class FlowController extends BaseController {
             if (tunnel != null){
                 GostUtil.PauseService(tunnel.getInNodeId(), name);
                 if (tunnel.getType() == 2){
-                    GostUtil.PauseRemoteService(tunnel.getOutNodeId(), name);
+                    for (Long relayNodeId : tunnelService.getRelayNodeIds(tunnel)) {
+                        GostUtil.PauseRemoteService(relayNodeId, name);
+                    }
                 }
             }
             forward.setStatus(0);

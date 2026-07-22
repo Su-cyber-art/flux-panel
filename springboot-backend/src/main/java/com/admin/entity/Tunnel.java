@@ -1,7 +1,10 @@
 package com.admin.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -70,4 +73,8 @@ public class Tunnel extends BaseEntity {
     private String udpListenAddr;
 
     private String interfaceName;
+
+    /** Ordered relay nodes between the entry and exit nodes. */
+    @TableField(exist = false)
+    private List<Long> chainNodeIds = new ArrayList<>();
 }

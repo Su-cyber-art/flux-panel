@@ -26,6 +26,7 @@ interface Tunnel {
   type: number; // 1: 端口转发, 2: 隧道转发
   inNodeId: number;
   outNodeId?: number;
+  chainNodeIds: number[];
   inIp: string;
   outIp?: string;
   protocol?: string;
@@ -50,6 +51,7 @@ interface TunnelForm {
   type: number;
   inNodeId: number | null;
   outNodeId?: number | null;
+  chainNodeIds: number[];
   protocol: string;
   tcpListenAddr: string;
   udpListenAddr: string;
@@ -99,6 +101,7 @@ export default function TunnelPage() {
     type: 1,
     inNodeId: null,
     outNodeId: null,
+    chainNodeIds: [],
     protocol: 'tls',
     tcpListenAddr: '[::]',
     udpListenAddr: '[::]',
@@ -176,6 +179,16 @@ export default function TunnelPage() {
       } else if (form.inNodeId === form.outNodeId) {
         newErrors.outNodeId = '隧道转发模式下，入口和出口不能是同一个节点';
       }
+
+      const pathNodeIds = [form.inNodeId, ...form.chainNodeIds, form.outNodeId]
+        .filter((nodeId): nodeId is number => !!nodeId);
+      if (pathNodeIds.length !== new Set(pathNodeIds).size) {
+        newErrors.chainNodeIds = '同一节点不能在链路中重复使用';
+      } else if (form.chainNodeIds.some(nodeId => !nodeId)) {
+        newErrors.chainNodeIds = '请选择完整的中转节点';
+      } else if (form.chainNodeIds.some(nodeId => nodes.find(node => node.id === nodeId)?.status !== 1)) {
+        newErrors.chainNodeIds = '中转节点必须在线';
+      }
       
       if (!form.protocol) {
         newErrors.protocol = '请选择协议类型';
@@ -194,6 +207,7 @@ export default function TunnelPage() {
       type: 1,
       inNodeId: null,
       outNodeId: null,
+      chainNodeIds: [],
       protocol: 'tls',
       tcpListenAddr: '[::]',
       udpListenAddr: '[::]',
@@ -215,6 +229,7 @@ export default function TunnelPage() {
       type: tunnel.type,
       inNodeId: tunnel.inNodeId,
       outNodeId: tunnel.outNodeId || null,
+      chainNodeIds: tunnel.chainNodeIds || [],
       protocol: tunnel.protocol || 'tls',
       tcpListenAddr: tunnel.tcpListenAddr || '[::]',
       udpListenAddr: tunnel.udpListenAddr || '[::]',
@@ -261,8 +276,43 @@ export default function TunnelPage() {
       ...prev,
       type,
       outNodeId: type === 1 ? null : prev.outNodeId,
+      chainNodeIds: type === 1 ? [] : prev.chainNodeIds,
       protocol: type === 1 ? 'tls' : prev.protocol
     }));
+  };
+
+  const addChainNode = () => {
+    const selectedNodeIds = new Set([form.inNodeId, form.outNodeId, ...form.chainNodeIds]);
+    const availableNode = nodes.find(node => node.status === 1 && !selectedNodeIds.has(node.id));
+    if (!availableNode) {
+      toast.error('没有可用的中转节点');
+      return;
+    }
+    setForm(prev => ({ ...prev, chainNodeIds: [...prev.chainNodeIds, availableNode.id] }));
+  };
+
+  const updateChainNode = (index: number, nodeId: number) => {
+    setForm(prev => ({
+      ...prev,
+      chainNodeIds: prev.chainNodeIds.map((id, currentIndex) => currentIndex === index ? nodeId : id)
+    }));
+  };
+
+  const removeChainNode = (index: number) => {
+    setForm(prev => ({
+      ...prev,
+      chainNodeIds: prev.chainNodeIds.filter((_, currentIndex) => currentIndex !== index)
+    }));
+  };
+
+  const moveChainNode = (index: number, direction: -1 | 1) => {
+    setForm(prev => {
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= prev.chainNodeIds.length) return prev;
+      const chainNodeIds = [...prev.chainNodeIds];
+      [chainNodeIds[index], chainNodeIds[targetIndex]] = [chainNodeIds[targetIndex], chainNodeIds[index]];
+      return { ...prev, chainNodeIds };
+    });
   };
 
   // 提交表单
@@ -494,6 +544,24 @@ export default function TunnelPage() {
                           </code>
                         </div>
                         
+                        {(tunnel.chainNodeIds || []).map((nodeId, index) => (
+                          <div key={`${tunnel.id}-hop-${index}`} className="space-y-1.5">
+                            <div className="text-center py-0.5">
+                              <svg className="w-3 h-3 text-default-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                              </svg>
+                            </div>
+                            <div className="p-2 bg-warning-50/60 dark:bg-warning-100/10 rounded border border-warning-200/70 dark:border-warning-300/30">
+                              <span className="text-xs font-medium text-warning-700 dark:text-warning-500">
+                                中转节点 {index + 1}
+                              </span>
+                              <code className="text-xs font-mono text-foreground block truncate">
+                                {getNodeName(nodeId)}
+                              </code>
+                            </div>
+                          </div>
+                        ))}
+
                         <div className="text-center py-0.5">
                           <svg className="w-3 h-3 text-default-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
@@ -604,7 +672,7 @@ export default function TunnelPage() {
         <Modal 
           isOpen={modalOpen}
           onOpenChange={setModalOpen}
-          size="2xl"
+          size="3xl"
         scrollBehavior="outside"
         backdrop="blur"
         placement="center"
@@ -799,6 +867,101 @@ export default function TunnelPage() {
                           <SelectItem key="mwss">MWSS</SelectItem>
                           <SelectItem key="mtcp">MTCP</SelectItem>
                         </Select>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm font-semibold">中转节点</h3>
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              color="primary"
+                              onPress={addChainNode}
+                              startContent={
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                              }
+                            >
+                              添加跳点
+                            </Button>
+                          </div>
+
+                          {form.chainNodeIds.map((nodeId, index) => (
+                            <div key={`chain-node-${index}`} className="flex items-center gap-2">
+                              <Chip size="sm" variant="flat" className="shrink-0">{index + 1}</Chip>
+                              <Select
+                                aria-label={`中转节点 ${index + 1}`}
+                                placeholder="请选择中转节点"
+                                selectedKeys={nodeId ? [nodeId.toString()] : []}
+                                onSelectionChange={(keys) => {
+                                  const selectedKey = Array.from(keys)[0] as string;
+                                  if (selectedKey) updateChainNode(index, parseInt(selectedKey));
+                                }}
+                                variant="bordered"
+                                className="flex-1"
+                              >
+                                {nodes
+                                  .filter(node => node.id === nodeId || (
+                                    node.id !== form.inNodeId &&
+                                    node.id !== form.outNodeId &&
+                                    !form.chainNodeIds.includes(node.id)
+                                  ))
+                                  .map(node => (
+                                    <SelectItem
+                                      key={node.id}
+                                      textValue={`${node.name} (${node.status === 1 ? '在线' : '离线'})`}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span>{node.name}</span>
+                                        <Chip color={node.status === 1 ? 'success' : 'danger'} variant="flat" size="sm">
+                                          {node.status === 1 ? '在线' : '离线'}
+                                        </Chip>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                              </Select>
+                              <Button
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                aria-label="上移中转节点"
+                                isDisabled={index === 0}
+                                onPress={() => moveChainNode(index, -1)}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                </svg>
+                              </Button>
+                              <Button
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                aria-label="下移中转节点"
+                                isDisabled={index === form.chainNodeIds.length - 1}
+                                onPress={() => moveChainNode(index, 1)}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </Button>
+                              <Button
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                color="danger"
+                                aria-label="删除中转节点"
+                                onPress={() => removeChainNode(index)}
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </Button>
+                            </div>
+                          ))}
+                          {errors.chainNodeIds && (
+                            <p className="text-xs text-danger">{errors.chainNodeIds}</p>
+                          )}
+                        </div>
 
                         <Select
                           label="出口节点"
@@ -1052,4 +1215,4 @@ export default function TunnelPage() {
       </div>
     
   );
-} 
+}

@@ -591,10 +591,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      * @param inNode 入口节点
      */
     private void deleteGostTunnelForwardServices(Tunnel tunnel, String serviceName, Node inNode) {
-        Node outNode = nodeService.getNodeById(tunnel.getOutNodeId());
-        if (outNode != null) {
-            GostUtil.DeleteChains(inNode.getId(), serviceName);
-            GostUtil.DeleteRemoteService(outNode.getId(), serviceName);
+        GostUtil.DeleteChains(inNode.getId(), serviceName);
+        for (Long relayNodeId : tunnelService.getRelayNodeIds(tunnel)) {
+            GostUtil.DeleteRemoteService(relayNodeId, serviceName);
         }
     }
 
