@@ -26,7 +26,7 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/su-cyber-art/flux-panel-backend:1.5.0
+    image: ghcr.io/su-cyber-art/flux-panel-api:1.5.0
     container_name: springboot-backend
     restart: unless-stopped
     environment:

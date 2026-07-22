@@ -204,8 +204,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
-            -t "${REGISTRY}/${IMAGE_NAMESPACE}/flux-panel-backend:latest" \
-            -t "${REGISTRY}/${IMAGE_NAMESPACE}/flux-panel-backend:${VERSION}" \
+            -t "${REGISTRY}/${IMAGE_NAMESPACE}/flux-panel-api:latest" \
+            -t "${REGISTRY}/${IMAGE_NAMESPACE}/flux-panel-api:${VERSION}" \
             ./springboot-backend
 
   create-release:
