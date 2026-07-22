@@ -1,91 +1,53 @@
-# flux-panel转发面板 哆啦A梦转发面板
+# flux-panel
 
-## 项目更新说明
-由于一些个人原因，**flux-panel** 将暂停更新一段时间，**恢复更新时间暂不确定**。
+`flux-panel` 是一个基于 GOST 的流量转发管理面板，由 Web 面板、后端服务和节点端程序组成，支持从单节点端口转发到任意多跳链路的统一管理。
 
-在此期间，项目不会继续推进新功能或修复问题，对可能带来的不便表示抱歉。当前已有功能仍可正常使用，也欢迎大家继续 Fork 或自行维护。
-
-如后续恢复更新，我会第一时间在仓库中说明。  
-感谢大家的理解与支持。
-
-
-本项目基于 [go-gost/gost](https://github.com/go-gost/gost) 和 [go-gost/x](https://github.com/go-gost/x) 两个开源库，实现了转发面板。
----
 ## 特性
 
-- 支持按 **隧道账号级别** 管理流量转发数量，可用于用户/隧道配额控制
-- 支持 **TCP** 和 **UDP** 协议的转发
-- 支持两种转发模式：**端口转发** 与 **隧道转发**
-- 隧道转发支持按顺序配置任意数量的 **多跳中转节点**
-- 可针对 **指定用户的指定隧道进行限速** 设置
-- 支持配置 **单向或双向流量计费方式**，灵活适配不同计费模型
-- 提供灵活的转发策略配置，适用于多种网络场景
+- 支持 TCP、UDP 协议转发
+- 支持端口转发与隧道转发两种模式
+- 支持按顺序配置任意数量的多跳中转节点
+- 为多跳链路的每一跳维护独立端口映射，并统一管理启停状态
+- 支持用户、隧道、节点和转发规则管理
+- 支持用户与隧道级别的转发数量、流量、速率和到期时间限制
+- 支持单向或双向流量计费及倍率配置
+- 支持 IPv4、IPv6 和多种转发策略
 
+## 快速安装
 
-## 部署流程
----
-### Docker Compose部署
-#### 快速部署
-面板端(稳定版)：
+面板端需要 Linux、Docker 和 Docker Compose。节点端支持 Linux AMD64 与 ARM64。
+
+### 安装面板
+
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-节点端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
+curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh \
+  && chmod +x panel_install.sh \
+  && sudo ./panel_install.sh
 ```
 
-面板端(开发版)：
+运行后选择 `1. 安装面板`。脚本会自动选择 IPv4 或 IPv6 的 Compose 配置，默认端口如下：
+
+- Web 面板：`6366`
+- 后端服务：`6365`
+
+默认管理员账号和密码均为 `admin_user`。首次登录后请立即修改密码。
+
+### 安装节点
+
+先在面板中创建节点并取得节点密钥，然后在节点服务器执行：
+
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
+curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/main/install.sh -o install.sh \
+  && chmod +x install.sh \
+  && sudo ./install.sh
 ```
-节点端(开发版)：
+
+运行后选择 `1. 安装`，按提示填写后端服务地址和节点密钥。也可以使用参数直接安装：
+
 ```bash
-curl -L https://raw.githubusercontent.com/bqlpfy/flux-panel/refs/heads/beta/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
+sudo ./install.sh -a "面板服务器地址:6365" -s "节点密钥"
 ```
 
-#### 默认管理员账号
+### 更新
 
-- **账号**: admin_user
-- **密码**: admin_user
-
-> ⚠️ 首次登录后请立即修改默认密码！
-
-
-## 免责声明
-
-本项目仅供个人学习与研究使用，基于开源项目进行二次开发。  
-
-使用本项目所带来的任何风险均由使用者自行承担，包括但不限于：  
-
-- 配置不当或使用错误导致的服务异常或不可用；  
-- 使用本项目引发的网络攻击、封禁、滥用等行为；  
-- 服务器因使用本项目被入侵、渗透、滥用导致的数据泄露、资源消耗或损失；  
-- 因违反当地法律法规所产生的任何法律责任。  
-
-本项目为开源的流量转发工具，仅限合法、合规用途。  
-使用者必须确保其使用行为符合所在国家或地区的法律法规。  
-
-**作者不对因使用本项目导致的任何法律责任、经济损失或其他后果承担责任。**  
-**禁止将本项目用于任何违法或未经授权的行为，包括但不限于网络攻击、数据窃取、非法访问等。**  
-
-如不同意上述条款，请立即停止使用本项目。  
-
-作者对因使用本项目所造成的任何直接或间接损失概不负责，亦不提供任何形式的担保、承诺或技术支持。  
-
-
-请务必在合法、合规、安全的前提下使用本项目。  
-
----
-## ⭐ 喝杯咖啡！（USDT）
-
-| 网络       | 地址                                                                 |
-|------------|----------------------------------------------------------------------|
-| BNB(BEP20) | `0x755492c03728851bbf855daa28a1e089f9aca4d1`                          |
-| TRC20      | `TYh2L3xxXpuJhAcBWnt3yiiADiCSJLgUm7`                                  |
-| Aptos      | `0xf2f9fb14749457748506a8281628d556e8540d1eb586d202cd8b02b99d369ef8`  |
-
-[![Star History Chart](https://api.star-history.com/svg?repos=bqlpfy/flux-panel&type=Date)](https://www.star-history.com/#bqlpfy/flux-panel&Date)
-
+重新下载对应脚本并运行，面板端或节点端均选择菜单中的 `2. 更新`。从旧版本升级面板时，后端会自动补齐多跳转发所需的数据表；所有节点也应更新到相同版本。

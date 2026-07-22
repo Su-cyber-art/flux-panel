@@ -19,7 +19,9 @@ get_architecture() {
 # 构建下载地址
 build_download_url() {
     local ARCH=$(get_architecture)
-    echo "https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/gost-${ARCH}"
+    local REPOSITORY="Su-cyber-art/flux-panel"
+    local VERSION="1.5.0"
+    echo "https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost-${ARCH}"
 }
 
 # 下载地址

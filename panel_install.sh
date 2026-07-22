@@ -8,9 +8,11 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/docker-compose-v6.yml"
-GOST_SQL_URL="https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/gost.sql"
+REPOSITORY="Su-cyber-art/flux-panel"
+VERSION="1.5.0"
+DOCKER_COMPOSEV4_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v6.yml"
+GOST_SQL_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost.sql"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -227,8 +229,6 @@ EOF
 
   echo "🎉 部署完成"
   echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
-  echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "📚 文档地址: https://tes.cc/guide.html"
   echo "💡 默认管理员账号: admin_user / admin_user"
   echo "⚠️  登录后请立即修改默认密码！"
 
