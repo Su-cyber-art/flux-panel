@@ -50,9 +50,22 @@ export const updateUserTunnel = (data: any) => Network.post("/tunnel/user/update
 export const userTunnel = () => Network.post("/tunnel/user/tunnel");
 
 // 转发CRUD操作 - 全部使用POST请求
+export interface ForwardPortAvailability {
+  available: boolean;
+  message: string;
+  port: number;
+  minPort?: number;
+  maxPort?: number;
+}
+
 export const createForward = (data: any) => Network.post("/forward/create", data);
 export const getForwardList = () => Network.post("/forward/list");
 export const updateForward = (data: any) => Network.post("/forward/update", data);
+export const checkForwardPort = (data: {
+  tunnelId: number;
+  inPort: number;
+  excludeForwardId?: number;
+}) => Network.post<ForwardPortAvailability>("/forward/check-port", data);
 export const deleteForward = (id: number) => Network.post("/forward/delete", { id });
 export const forceDeleteForward = (id: number) => Network.post("/forward/force-delete", { id });
 
@@ -88,4 +101,4 @@ export const updateConfig = (name: string, value: string) => Network.post("/conf
 // 验证码相关接口
 export const checkCaptcha = () => Network.post("/captcha/check");
 export const generateCaptcha = () => Network.post(`/captcha/generate`);
-export const verifyCaptcha = (data: { captchaId: string; trackData: string }) => Network.post("/captcha/verify", data); 
+export const verifyCaptcha = (data: { captchaId: string; trackData: string }) => Network.post("/captcha/verify", data);

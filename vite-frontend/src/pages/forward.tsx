@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
@@ -34,6 +34,7 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { 
   createForward, 
+  checkForwardPort,
   getForwardList, 
   updateForward, 
   deleteForward,
@@ -82,6 +83,14 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+}
+
+type PortCheckStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'error';
+
+interface PortCheckState {
+  key: string | null;
+  status: PortCheckStatus;
+  message: string;
 }
 
 interface AddressItem {
@@ -156,6 +165,8 @@ export default function ForwardPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [diagnosisModalOpen, setDiagnosisModalOpen] = useState(false);
+  const [portWarningOpen, setPortWarningOpen] = useState(false);
+  const [portWarningMessage, setPortWarningMessage] = useState('');
   const [isEdit, setIsEdit] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -197,10 +208,99 @@ export default function ForwardPage() {
   // 表单验证错误
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [selectedTunnel, setSelectedTunnel] = useState<Tunnel | null>(null);
+  const [portCheckState, setPortCheckState] = useState<PortCheckState>({
+    key: null,
+    status: 'idle',
+    message: ''
+  });
+  const portCheckRequestId = useRef(0);
+  const lastPortWarningKey = useRef<string | null>(null);
+
+  const hasCustomPort = form.inPort !== null;
+  const currentPortCheckKey = form.tunnelId !== null && form.inPort !== null
+    ? `${form.tunnelId}:${form.inPort}:${isEdit ? form.id ?? 'edit' : 'create'}`
+    : null;
+  const activePortCheck = portCheckState.key === currentPortCheckKey
+    ? portCheckState
+    : null;
+  const isCurrentPortAvailable = activePortCheck?.status === 'available';
+  const isPortSubmissionBlocked = hasCustomPort && !isCurrentPortAvailable;
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    const requestId = ++portCheckRequestId.current;
+
+    if (!modalOpen || currentPortCheckKey === null || form.tunnelId === null || form.inPort === null) {
+      setPortCheckState({ key: null, status: 'idle', message: '' });
+      lastPortWarningKey.current = null;
+      return;
+    }
+
+    const showUnavailablePort = (status: 'unavailable' | 'error', message: string) => {
+      if (portCheckRequestId.current !== requestId) return;
+
+      setPortCheckState({
+        key: currentPortCheckKey,
+        status,
+        message
+      });
+
+      const warningKey = `${currentPortCheckKey}:${message}`;
+      if (lastPortWarningKey.current !== warningKey) {
+        lastPortWarningKey.current = warningKey;
+        setPortWarningMessage(message);
+        setPortWarningOpen(true);
+      }
+    };
+
+    if (!Number.isInteger(form.inPort) || form.inPort < 1 || form.inPort > 65535) {
+      showUnavailablePort('unavailable', '端口号必须是 1-65535 之间的整数');
+      return;
+    }
+
+    setPortCheckState({
+      key: currentPortCheckKey,
+      status: 'checking',
+      message: '正在校验端口可用性'
+    });
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await checkForwardPort({
+          tunnelId: form.tunnelId!,
+          inPort: form.inPort!,
+          excludeForwardId: isEdit ? form.id : undefined
+        });
+
+        if (portCheckRequestId.current !== requestId) return;
+
+        if (response.code !== 0 || !response.data) {
+          showUnavailablePort('error', response.msg || '端口校验失败，请稍后重试');
+          return;
+        }
+
+        if (!response.data.available) {
+          showUnavailablePort('unavailable', response.data.message || '该入口端口不可用');
+          return;
+        }
+
+        lastPortWarningKey.current = null;
+        setPortCheckState({
+          key: currentPortCheckKey,
+          status: 'available',
+          message: response.data.message || '入口端口可用'
+        });
+      } catch (error) {
+        console.error('端口校验失败:', error);
+        showUnavailablePort('error', '端口校验失败，请检查网络后重试');
+      }
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [modalOpen, currentPortCheckKey, form.tunnelId, form.inPort, form.id, isEdit]);
 
   // 切换显示模式并保存到localStorage
   const handleViewModeChange = () => {
@@ -448,6 +548,9 @@ export default function ForwardPage() {
     });
     setSelectedTunnel(null);
     setErrors({});
+    setPortCheckState({ key: null, status: 'idle', message: '' });
+    setPortWarningOpen(false);
+    lastPortWarningKey.current = null;
     setModalOpen(true);
   };
 
@@ -467,6 +570,9 @@ export default function ForwardPage() {
     const tunnel = tunnels.find(t => t.id === forward.tunnelId);
     setSelectedTunnel(tunnel || null);
     setErrors({});
+    setPortCheckState({ key: null, status: 'idle', message: '' });
+    setPortWarningOpen(false);
+    lastPortWarningKey.current = null;
     setModalOpen(true);
   };
 
@@ -514,10 +620,23 @@ export default function ForwardPage() {
     const tunnel = tunnels.find(t => t.id === parseInt(tunnelId));
     setSelectedTunnel(tunnel || null);
     setForm(prev => ({ ...prev, tunnelId: parseInt(tunnelId) }));
+    setErrors(prev => {
+      const { tunnelId: _tunnelError, inPort: _portError, ...remainingErrors } = prev;
+      return remainingErrors;
+    });
   };
 
   // 提交表单
   const handleSubmit = async () => {
+    if (isPortSubmissionBlocked) {
+      const message = activePortCheck?.status === 'checking'
+        ? '端口正在校验，请稍候'
+        : activePortCheck?.message || '请先选择隧道并确认自定义端口可用';
+      setPortWarningMessage(message);
+      setPortWarningOpen(true);
+      return;
+    }
+
     if (!validateForm()) return;
     
     setSubmitLoading(true);
@@ -562,7 +681,23 @@ export default function ForwardPage() {
         setModalOpen(false);
         loadData();
       } else {
-        toast.error(res.msg || '操作失败');
+        const message = res.msg || '操作失败';
+        const isPortAvailabilityError = form.inPort !== null
+          && message.includes('端口')
+          && /(占用|范围|不可用|无法校验|未配置)/.test(message);
+
+        if (isPortAvailabilityError) {
+          setPortCheckState({
+            key: currentPortCheckKey,
+            status: 'unavailable',
+            message
+          });
+          lastPortWarningKey.current = `${currentPortCheckKey}:${message}`;
+          setPortWarningMessage(message);
+          setPortWarningOpen(true);
+        } else {
+          toast.error(message);
+        }
       }
     } catch (error) {
       console.error('提交失败:', error);
@@ -1546,7 +1681,12 @@ export default function ForwardPage() {
         {/* 新增/编辑模态框 */}
         <Modal 
           isOpen={modalOpen}
-          onOpenChange={setModalOpen}
+          onOpenChange={(open) => {
+            setModalOpen(open);
+            if (!open) {
+              setPortWarningOpen(false);
+            }
+          }}
           size="2xl"
           scrollBehavior="outside"
           backdrop="blur"
@@ -1601,15 +1741,40 @@ export default function ForwardPage() {
                       placeholder="留空自动分配"
                       type="number"
                       value={form.inPort?.toString() || ''}
-                      onChange={(e) => setForm(prev => ({ 
-                        ...prev, 
-                        inPort: e.target.value ? parseInt(e.target.value) : null 
-                      }))}
-                      isInvalid={!!errors.inPort}
-                      errorMessage={errors.inPort}
+                      min={1}
+                      max={65535}
+                      step={1}
+                      onChange={(e) => {
+                        setForm(prev => ({
+                          ...prev,
+                          inPort: e.target.value === '' ? null : Number(e.target.value)
+                        }));
+                        setErrors(prev => {
+                          const { inPort: _portError, ...remainingErrors } = prev;
+                          return remainingErrors;
+                        });
+                      }}
+                      isInvalid={
+                        !!errors.inPort
+                        || activePortCheck?.status === 'unavailable'
+                        || activePortCheck?.status === 'error'
+                      }
+                      errorMessage={
+                        errors.inPort
+                        || (
+                          activePortCheck?.status === 'unavailable'
+                          || activePortCheck?.status === 'error'
+                            ? activePortCheck.message
+                            : undefined
+                        )
+                      }
                       variant="bordered"
                       description={
-                        selectedTunnel && selectedTunnel.inNodePortSta && selectedTunnel.inNodePortEnd
+                        activePortCheck?.status === 'checking'
+                          ? '正在校验端口可用性...'
+                          : activePortCheck?.status === 'available'
+                            ? activePortCheck.message
+                            : selectedTunnel && selectedTunnel.inNodePortSta && selectedTunnel.inNodePortEnd
                           ? `允许范围: ${selectedTunnel.inNodePortSta}-${selectedTunnel.inNodePortEnd}`
                           : '留空将自动分配可用端口'
                       }
@@ -1667,8 +1832,40 @@ export default function ForwardPage() {
                     color="primary" 
                     onPress={handleSubmit}
                     isLoading={submitLoading}
+                    isDisabled={isPortSubmissionBlocked}
                   >
                     {isEdit ? '保存修改' : '创建转发'}
+                  </Button>
+                </ModalFooter>
+              </>
+            )}
+          </ModalContent>
+        </Modal>
+
+        <Modal
+          isOpen={portWarningOpen}
+          onOpenChange={setPortWarningOpen}
+          size="md"
+          backdrop="blur"
+          placement="center"
+        >
+          <ModalContent>
+            {(onClose) => (
+              <>
+                <ModalHeader className="flex flex-col gap-1">
+                  <h2 className="text-lg font-bold text-danger">入口端口不可用</h2>
+                </ModalHeader>
+                <ModalBody>
+                  <Alert
+                    color="danger"
+                    variant="flat"
+                    title="无法使用当前端口"
+                    description={portWarningMessage}
+                  />
+                </ModalBody>
+                <ModalFooter>
+                  <Button color="primary" onPress={onClose}>
+                    修改端口
                   </Button>
                 </ModalFooter>
               </>
@@ -2158,4 +2355,4 @@ export default function ForwardPage() {
       </div>
     
   );
-} 
+}

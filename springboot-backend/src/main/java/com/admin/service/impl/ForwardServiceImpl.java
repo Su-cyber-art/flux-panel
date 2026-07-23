@@ -1,6 +1,8 @@
 package com.admin.service.impl;
 
 import com.admin.common.dto.ForwardDto;
+import com.admin.common.dto.ForwardPortAvailabilityDto;
+import com.admin.common.dto.ForwardPortCheckDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
@@ -143,6 +145,30 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     @Override
+    public R checkPortAvailability(ForwardPortCheckDto portCheckDto) {
+        UserInfo currentUser = getCurrentUserInfo();
+        Tunnel tunnel = validateTunnel(portCheckDto.getTunnelId());
+        if (tunnel == null) {
+            return R.err("隧道不存在");
+        }
+        if (tunnel.getStatus() != TUNNEL_STATUS_ACTIVE) {
+            return R.err("隧道已禁用，无法校验端口");
+        }
+
+        if (currentUser.getRoleId() != ADMIN_ROLE_ID
+                && getUserTunnel(currentUser.getUserId(), tunnel.getId().intValue()) == null) {
+            return R.err("你没有该隧道权限");
+        }
+
+        Long excludeForwardId = portCheckDto.getExcludeForwardId();
+        if (excludeForwardId != null && validateForwardExists(excludeForwardId, currentUser) == null) {
+            return R.err("转发不存在或无权操作");
+        }
+
+        return R.ok(getInPortAvailability(tunnel, portCheckDto.getInPort(), excludeForwardId));
+    }
+
+    @Override
     public R updateForward(ForwardUpdateDto forwardUpdateDto) {
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
@@ -227,6 +253,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             // 通过forward记录获取原始的用户ID
             userTunnel = getUserTunnel(existForward.getUserId(), tunnel.getId().intValue());
         }
+        boolean administratorOwnsForward = currentUser.getRoleId() == ADMIN_ROLE_ID
+                && Objects.equals(currentUser.getUserId(), existForward.getUserId());
+        Integer limiter = resolveLimiterForUpdate(userTunnel, administratorOwnsForward);
 
         // 6. 更新Forward对象和端口分配
         PortAllocation portAllocation = allocatePortsForUpdate(tunnel, forwardUpdateDto, existForward, tunnelChanged);
@@ -263,11 +292,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (tunnelChanged) {
             // 隧道变化时：先删除原配置，再创建新配置
             gostResult = updateGostServicesWithTunnelChange(existForward, updatedForward, tunnel,
-                    permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel,
+                    limiter, nodeInfo, userTunnel,
                     portAllocation.getRelayPorts());
         } else {
             // 隧道未变化时：直接更新配置
-            gostResult = updateGostServices(updatedForward, tunnel, permissionResult != null ? permissionResult.getLimiter() : null, nodeInfo, userTunnel);
+            gostResult = updateGostServices(updatedForward, tunnel, limiter, nodeInfo, userTunnel);
         }
 
         if (gostResult.getCode() != 0) {
@@ -966,8 +995,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         if (specifiedInPort != null) {
             // 用户指定了入口端口，需要检查是否可用
-            if (!isInPortAvailable(tunnel, specifiedInPort, excludeForwardId)) {
-                return PortAllocation.error("指定的入口端口 " + specifiedInPort + " 已被占用或不在允许范围内");
+            ForwardPortAvailabilityDto availability =
+                    getInPortAvailability(tunnel, specifiedInPort, excludeForwardId);
+            if (!availability.isAvailable()) {
+                return PortAllocation.error(availability.getMessage());
             }
             inPort = specifiedInPort;
         } else {
@@ -1005,8 +1036,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         Integer inPort = existingForward.getInPort();
         if (updateDto.getInPort() != null && !Objects.equals(updateDto.getInPort(), inPort)) {
-            if (!isInPortAvailable(tunnel, updateDto.getInPort(), existingForward.getId())) {
-                return PortAllocation.error("指定的入口端口 " + updateDto.getInPort() + " 已被占用或不在允许范围内");
+            ForwardPortAvailabilityDto availability =
+                    getInPortAvailability(tunnel, updateDto.getInPort(), existingForward.getId());
+            if (!availability.isAvailable()) {
+                return PortAllocation.error(availability.getMessage());
             }
             inPort = updateDto.getInPort();
         }
@@ -1417,23 +1450,45 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     /**
      * 检查指定的入口端口是否可用（可排除指定的转发ID）
      */
-    private boolean isInPortAvailable(Tunnel tunnel, Integer port, Long excludeForwardId) {
-        // 获取入口节点信息
+    private ForwardPortAvailabilityDto getInPortAvailability(
+            Tunnel tunnel, Integer port, Long excludeForwardId) {
         Node inNode = nodeService.getNodeById(tunnel.getInNodeId());
+        Set<Integer> usedPorts = inNode == null
+                ? Collections.emptySet()
+                : getAllUsedPortsOnNode(tunnel.getInNodeId(), excludeForwardId);
+        return evaluateInPortAvailability(inNode, port, usedPorts);
+    }
+
+    static ForwardPortAvailabilityDto evaluateInPortAvailability(
+            Node inNode, Integer port, Set<Integer> usedPorts) {
         if (inNode == null) {
-            return false;
+            return new ForwardPortAvailabilityDto(
+                    false, "入口节点不存在，无法校验端口", port, null, null);
         }
 
-        // 检查端口是否在节点允许的范围内
-        if (port < inNode.getPortSta() || port > inNode.getPortEnd()) {
-            return false;
+        Integer minPort = inNode.getPortSta();
+        Integer maxPort = inNode.getPortEnd();
+        if (minPort == null || maxPort == null) {
+            return new ForwardPortAvailabilityDto(
+                    false, "入口节点未配置可用端口范围", port, minPort, maxPort);
         }
 
-        // 获取该节点上所有已被占用的端口（包括作为入口和出口使用的端口）
-        Set<Integer> usedPorts = getAllUsedPortsOnNode(tunnel.getInNodeId(), excludeForwardId);
+        if (port == null || port < minPort || port > maxPort) {
+            return new ForwardPortAvailabilityDto(
+                    false,
+                    "端口 " + port + " 不在入口节点允许范围 " + minPort + "-" + maxPort + " 内",
+                    port,
+                    minPort,
+                    maxPort);
+        }
 
-        // 检查端口是否已被占用（在节点级别检查，考虑入口和出口端口）
-        return !usedPorts.contains(port);
+        if (usedPorts.contains(port)) {
+            return new ForwardPortAvailabilityDto(
+                    false, "入口端口 " + port + " 已被占用，请更换端口", port, minPort, maxPort);
+        }
+
+        return new ForwardPortAvailabilityDto(
+                true, "入口端口 " + port + " 可用", port, minPort, maxPort);
     }
 
     /**
@@ -1539,6 +1594,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     private String buildServiceName(Long forwardId, Integer userId, UserTunnel userTunnel) {
         int userTunnelId = (userTunnel != null) ? userTunnel.getId() : 0;
         return forwardId + "_" + userId + "_" + userTunnelId;
+    }
+
+    static Integer resolveLimiterForUpdate(UserTunnel userTunnel, boolean administratorOwnsForward) {
+        if (administratorOwnsForward || userTunnel == null) {
+            return null;
+        }
+        return userTunnel.getSpeedId();
     }
 
 

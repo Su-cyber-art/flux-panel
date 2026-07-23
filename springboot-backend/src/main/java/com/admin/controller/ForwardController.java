@@ -3,6 +3,7 @@ package com.admin.controller;
 import com.admin.common.aop.LogAnnotation;
 import com.admin.common.annotation.RequireRole;
 import com.admin.common.dto.ForwardDto;
+import com.admin.common.dto.ForwardPortCheckDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.service.ForwardService;
@@ -44,6 +45,11 @@ public class ForwardController extends BaseController {
     @PostMapping("/update")
     public R update(@Validated @RequestBody ForwardUpdateDto forwardUpdateDto) {
         return forwardService.updateForward(forwardUpdateDto);
+    }
+
+    @PostMapping("/check-port")
+    public R checkPort(@Validated @RequestBody ForwardPortCheckDto portCheckDto) {
+        return forwardService.checkPortAvailability(portCheckDto);
     }
 
     @LogAnnotation

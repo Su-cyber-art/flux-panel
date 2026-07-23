@@ -1,6 +1,7 @@
 package com.admin.service;
 
 import com.admin.common.dto.ForwardDto;
+import com.admin.common.dto.ForwardPortCheckDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.lang.R;
 import com.admin.entity.Forward;
@@ -36,6 +37,13 @@ public interface ForwardService extends IService<Forward> {
      * @return 结果
      */
     R updateForward(ForwardUpdateDto forwardUpdateDto);
+
+    /**
+     * 检查用户指定的入口端口是否可用
+     * @param portCheckDto 端口校验参数
+     * @return 可用状态和具体原因
+     */
+    R checkPortAvailability(ForwardPortCheckDto portCheckDto);
 
     /**
      * 删除端口转发

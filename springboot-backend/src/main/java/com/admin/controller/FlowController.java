@@ -19,7 +19,9 @@ import javax.annotation.Resource;
 import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -236,16 +238,15 @@ public class FlowController extends BaseController {
         updateUserTunnelFlow(userTunnelId, flowStats);
 
         // 7. 检查和服务暂停操作
-        String name = buildServiceName(forwardId, userId, userTunnelId);
         if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
-            checkUserRelatedLimits(userId, name);
-            checkUserTunnelRelatedLimits(userTunnelId, name, userId);
+            checkUserRelatedLimits(userId);
+            checkUserTunnelRelatedLimits(userTunnelId, userId);
         }
 
         return SUCCESS_RESPONSE;
     }
 
-    private void checkUserRelatedLimits(String userId, String name) {
+    private void checkUserRelatedLimits(String userId) {
 
         // 重新查询用户以获取最新的流量数据
         User updatedUser = userService.getById(userId);
@@ -255,68 +256,114 @@ public class FlowController extends BaseController {
         long userFlowLimit = updatedUser.getFlow() * BYTES_TO_GB;
         long userCurrentFlow = updatedUser.getInFlow() + updatedUser.getOutFlow();
         if (userFlowLimit < userCurrentFlow) {
-            pauseAllUserServices(userId, name);
+            pauseAllUserServices(userId);
             return;
         }
 
         // 检查用户到期时间
         if (updatedUser.getExpTime() != null && updatedUser.getExpTime() <= new Date().getTime()) {
-            pauseAllUserServices(userId, name);
+            pauseAllUserServices(userId);
             return;
         }
 
         // 检查用户状态
         if (updatedUser.getStatus() != 1) {
-            pauseAllUserServices(userId, name);
+            pauseAllUserServices(userId);
         }
     }
 
-    public void pauseAllUserServices(String userId, String name) {
+    public void pauseAllUserServices(String userId) {
         List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", userId));
-        pauseService(forwardList, name);
+        pauseService(forwardList);
     }
 
-    public void checkUserTunnelRelatedLimits(String userTunnelId, String name, String userId) {
+    public void checkUserTunnelRelatedLimits(String userTunnelId, String userId) {
 
         UserTunnel userTunnel = userTunnelService.getById(userTunnelId);
         if (userTunnel == null) return;
         long flow = userTunnel.getInFlow() + userTunnel.getOutFlow();
         if (flow >= userTunnel.getFlow() *  BYTES_TO_GB) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
+            pauseSpecificForward(userTunnel.getTunnelId(), userId);
             return;
         }
 
         if (userTunnel.getExpTime() != null && userTunnel.getExpTime() <= System.currentTimeMillis()) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
+            pauseSpecificForward(userTunnel.getTunnelId(), userId);
             return;
         }
 
         if (userTunnel.getStatus() != 1) {
-            pauseSpecificForward(userTunnel.getTunnelId(), name, userId);
+            pauseSpecificForward(userTunnel.getTunnelId(), userId);
         }
 
 
     }
 
-    private void pauseSpecificForward(Integer tunnelId, String name, String userId) {
+    private void pauseSpecificForward(Integer tunnelId, String userId) {
         List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId).eq("user_id", userId));
-        pauseService(forwardList, name);
+        pauseService(forwardList);
     }
 
-    public void pauseService(List<Forward> forwardList, String name) {
+    public void pauseService(List<Forward> forwardList) {
+        Map<String, Integer> userTunnelIds = getUserTunnelIds(forwardList);
         for (Forward forward : forwardList) {
             Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
             if (tunnel != null){
-                GostUtil.PauseService(tunnel.getInNodeId(), name);
+                String name = buildServiceName(forward, userTunnelIds);
+                pauseEntryService(tunnel.getInNodeId(), name);
                 if (tunnel.getType() == 2){
                     for (Long relayNodeId : tunnelService.getRelayNodeIds(tunnel)) {
-                        GostUtil.PauseRemoteService(relayNodeId, name);
+                        pauseRelayService(relayNodeId, name);
                     }
                 }
             }
             forward.setStatus(0);
             forwardService.updateById(forward);
         }
+    }
+
+    private Map<String, Integer> getUserTunnelIds(List<Forward> forwardList) {
+        Set<Integer> userIds = forwardList.stream()
+                .map(Forward::getUserId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<Integer> tunnelIds = forwardList.stream()
+                .map(Forward::getTunnelId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (userIds.isEmpty() || tunnelIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return userTunnelService.list(new QueryWrapper<UserTunnel>()
+                        .in("user_id", userIds)
+                        .in("tunnel_id", tunnelIds))
+                .stream()
+                .collect(Collectors.toMap(
+                        userTunnel -> buildUserTunnelKey(userTunnel.getUserId(), userTunnel.getTunnelId()),
+                        UserTunnel::getId,
+                        (existing, ignored) -> existing));
+    }
+
+    private String buildServiceName(Forward forward, Map<String, Integer> userTunnelIds) {
+        Integer userTunnelId = userTunnelIds.getOrDefault(
+                buildUserTunnelKey(forward.getUserId(), forward.getTunnelId()), 0);
+        return buildServiceName(
+                forward.getId().toString(),
+                forward.getUserId().toString(),
+                userTunnelId.toString());
+    }
+
+    private String buildUserTunnelKey(Integer userId, Integer tunnelId) {
+        return userId + ":" + tunnelId;
+    }
+
+    protected void pauseEntryService(Long nodeId, String name) {
+        GostUtil.PauseService(nodeId, name);
+    }
+
+    protected void pauseRelayService(Long nodeId, String name) {
+        GostUtil.PauseRemoteService(nodeId, name);
     }
 
     private FlowDto filterFlowData(FlowDto flowDto, Forward forward, int flowType) {
