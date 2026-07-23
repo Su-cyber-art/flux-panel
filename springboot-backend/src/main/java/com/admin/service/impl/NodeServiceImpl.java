@@ -45,6 +45,10 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
     
     /** 节点默认状态：启用 */
     private static final int NODE_STATUS_ACTIVE = 0;
+
+    /** 节点安装脚本：始终使用当前仓库的最新稳定版 */
+    private static final String NODE_INSTALL_SCRIPT_URL =
+            "https://github.com/Su-cyber-art/flux-panel/releases/latest/download/install.sh";
     
     /** 成功响应消息 */
     private static final String SUCCESS_CREATE_MSG = "节点创建成功";
@@ -372,8 +376,8 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
 
         StringBuilder command = new StringBuilder();
         
-        // 第一部分：下载安装脚本  
-        command.append("curl -L https://github.com/bqlpfy/flux-panel/releases/download/1.4.3/install.sh")
+        // 第一部分：下载安装脚本
+        command.append("curl -fsSL ").append(NODE_INSTALL_SCRIPT_URL)
                .append(" -o ./install.sh && chmod +x ./install.sh && ");
         
         // 处理服务器地址，如果是IPv6需要添加方括号

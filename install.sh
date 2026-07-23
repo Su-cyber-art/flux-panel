@@ -20,7 +20,7 @@ get_architecture() {
 build_download_url() {
     local ARCH=$(get_architecture)
     local REPOSITORY="Su-cyber-art/flux-panel"
-    local VERSION="1.5.0"
+    local VERSION="1.5.1"
     echo "https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost-${ARCH}"
 }
 
