@@ -61,6 +61,27 @@ interface TunnelForm {
   status: number;
 }
 
+const normalizeNodeId = (value: unknown): number | null => {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (candidate === null || candidate === undefined || candidate === '') {
+    return null;
+  }
+
+  const nodeId = Number(candidate);
+  return Number.isSafeInteger(nodeId) && nodeId > 0 ? nodeId : null;
+};
+
+const normalizeTunnelForm = (form: TunnelForm): TunnelForm => ({
+  ...form,
+  inNodeId: normalizeNodeId(form.inNodeId),
+  outNodeId: form.type === 2 ? normalizeNodeId(form.outNodeId) : null,
+  chainNodeIds: form.type === 2
+    ? form.chainNodeIds
+        .map(normalizeNodeId)
+        .filter((nodeId): nodeId is number => nodeId !== null)
+    : []
+});
+
 interface DiagnosisResult {
   tunnelName: string;
   tunnelType: string;
@@ -147,50 +168,48 @@ export default function TunnelPage() {
   };
 
   // 表单验证
-  const validateForm = (): boolean => {
+  const validateForm = (data: TunnelForm): boolean => {
     const newErrors: {[key: string]: string} = {};
     
-    if (!form.name.trim()) {
+    if (!data.name.trim()) {
       newErrors.name = '请输入隧道名称';
-    } else if (form.name.length < 2 || form.name.length > 50) {
+    } else if (data.name.length < 2 || data.name.length > 50) {
       newErrors.name = '隧道名称长度应在2-50个字符之间';
     }
     
-    if (!form.inNodeId) {
+    if (!data.inNodeId) {
       newErrors.inNodeId = '请选择入口节点';
     }
     
-    if (!form.tcpListenAddr.trim()) {
+    if (!data.tcpListenAddr.trim()) {
       newErrors.tcpListenAddr = '请输入TCP监听地址';
     }
     
-    if (!form.udpListenAddr.trim()) {
+    if (!data.udpListenAddr.trim()) {
       newErrors.udpListenAddr = '请输入UDP监听地址';
     }
     
-    if (form.trafficRatio < 0.0 || form.trafficRatio > 100.0) {
+    if (data.trafficRatio < 0.0 || data.trafficRatio > 100.0) {
       newErrors.trafficRatio = '流量倍率必须在0.0-100.0之间';
     }
     
     // 隧道转发时的验证
-    if (form.type === 2) {
-      if (!form.outNodeId) {
+    if (data.type === 2) {
+      if (!data.outNodeId) {
         newErrors.outNodeId = '请选择出口节点';
-      } else if (form.inNodeId === form.outNodeId) {
+      } else if (data.inNodeId === data.outNodeId) {
         newErrors.outNodeId = '隧道转发模式下，入口和出口不能是同一个节点';
       }
 
-      const pathNodeIds = [form.inNodeId, ...form.chainNodeIds, form.outNodeId]
+      const pathNodeIds = [data.inNodeId, ...data.chainNodeIds, data.outNodeId]
         .filter((nodeId): nodeId is number => !!nodeId);
       if (pathNodeIds.length !== new Set(pathNodeIds).size) {
         newErrors.chainNodeIds = '同一节点不能在链路中重复使用';
-      } else if (form.chainNodeIds.some(nodeId => !nodeId)) {
-        newErrors.chainNodeIds = '请选择完整的中转节点';
-      } else if (form.chainNodeIds.some(nodeId => nodes.find(node => node.id === nodeId)?.status !== 1)) {
+      } else if (data.chainNodeIds.some(nodeId => nodes.find(node => node.id === nodeId)?.status !== 1)) {
         newErrors.chainNodeIds = '中转节点必须在线';
       }
       
-      if (!form.protocol) {
+      if (!data.protocol) {
         newErrors.protocol = '请选择协议类型';
       }
     }
@@ -317,12 +336,11 @@ export default function TunnelPage() {
 
   // 提交表单
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    const data = normalizeTunnelForm(form);
+    if (!validateForm(data)) return;
     
     setSubmitLoading(true);
     try {
-      const data = { ...form };
-      
       const response = isEdit 
         ? await updateTunnel(data)
         : await createTunnel(data);
@@ -766,10 +784,8 @@ export default function TunnelPage() {
                       placeholder="请选择入口节点"
                       selectedKeys={form.inNodeId ? [form.inNodeId.toString()] : []}
                       onSelectionChange={(keys) => {
-                        const selectedKey = Array.from(keys)[0] as string;
-                        if (selectedKey) {
-                          setForm(prev => ({ ...prev, inNodeId: parseInt(selectedKey) }));
-                        }
+                        const nodeId = normalizeNodeId(Array.from(keys)[0]);
+                        setForm(prev => ({ ...prev, inNodeId: nodeId }));
                       }}
                       isInvalid={!!errors.inNodeId}
                       errorMessage={errors.inNodeId}
@@ -894,8 +910,8 @@ export default function TunnelPage() {
                                 placeholder="请选择中转节点"
                                 selectedKeys={nodeId ? [nodeId.toString()] : []}
                                 onSelectionChange={(keys) => {
-                                  const selectedKey = Array.from(keys)[0] as string;
-                                  if (selectedKey) updateChainNode(index, parseInt(selectedKey));
+                                  const selectedNodeId = normalizeNodeId(Array.from(keys)[0]);
+                                  if (selectedNodeId) updateChainNode(index, selectedNodeId);
                                 }}
                                 variant="bordered"
                                 className="flex-1"
@@ -968,10 +984,8 @@ export default function TunnelPage() {
                           placeholder="请选择出口节点"
                           selectedKeys={form.outNodeId ? [form.outNodeId.toString()] : []}
                           onSelectionChange={(keys) => {
-                            const selectedKey = Array.from(keys)[0] as string;
-                            if (selectedKey) {
-                              setForm(prev => ({ ...prev, outNodeId: parseInt(selectedKey) }));
-                            }
+                            const nodeId = normalizeNodeId(Array.from(keys)[0]);
+                            setForm(prev => ({ ...prev, outNodeId: nodeId }));
                           }}
                           isInvalid={!!errors.outNodeId}
                           errorMessage={errors.outNodeId}
@@ -1055,7 +1069,7 @@ export default function TunnelPage() {
                   <h2 className="text-xl font-bold">确认删除</h2>
                 </ModalHeader>
                 <ModalBody>
-                  <p>确定要删除隧道 <strong>"{tunnelToDelete?.name}"</strong> 吗？</p>
+                  <p>确定要删除隧道 <strong>&quot;{tunnelToDelete?.name}&quot;</strong> 吗？</p>
                   <p className="text-small text-default-500">此操作不可恢复，请谨慎操作。</p>
                 </ModalBody>
                 <ModalFooter>

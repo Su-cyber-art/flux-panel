@@ -9,7 +9,7 @@ export LC_ALL=C
 
 # 全局下载地址配置
 REPOSITORY="Su-cyber-art/flux-panel"
-VERSION="1.5.1"
+VERSION="1.5.2"
 DOCKER_COMPOSEV4_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v4.yml"
 DOCKER_COMPOSEV6_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v6.yml"
 GOST_SQL_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost.sql"
