@@ -1,5 +1,9 @@
-# 多阶段构建 - 构建阶段
-FROM node:20.19.0 AS builder
+ARG APP_VERSION=dev
+
+FROM node:24-alpine AS builder
+
+ARG APP_VERSION
+ENV VITE_APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
 
@@ -9,11 +13,12 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-# 生产阶段
 FROM nginx:stable-alpine AS production-stage
 
-COPY nginx.conf /etc/nginx/nginx.conf
+ARG APP_VERSION
+LABEL org.opencontainers.image.version=${APP_VERSION}
 
+COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80

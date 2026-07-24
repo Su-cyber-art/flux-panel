@@ -1,8 +1,8 @@
-import type { NavigateOptions } from "react-router-dom";
+import type { NavigateOptions } from "@/router";
 import * as React from "react";
 
 import { HeroUIProvider } from "@heroui/system";
-import { useHref, useNavigate } from "react-router-dom";
+import { useHref, useNavigate } from "@/router";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from '@/components/theme-provider';
 import { I18nProvider } from "@react-aria/i18n";

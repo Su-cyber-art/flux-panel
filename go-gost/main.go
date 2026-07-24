@@ -120,7 +120,7 @@ func main() {
 	log := xlogger.NewLogger()
 	logger.SetDefault(log)
 
-	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, "1.2.4")
+	wsReporter := socket.StartWebSocketReporterWithConfig(config.Addr, config.Secret, config.Http, config.Tls, config.Socks, version)
 	defer wsReporter.Stop()
 	service.SetHTTPReportURL(config.Addr, config.Secret)
 
@@ -130,5 +130,5 @@ func main() {
 	}
 }
 
-// GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost
+// GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=1.0.0" -o gost
 // upx --best --lzma gost

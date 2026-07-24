@@ -52,10 +52,10 @@ class PortReservationServiceIntegrationTest {
                 """);
 
         NodeService nodeService = mock(NodeService.class);
-        TunnelService tunnelService = mock(TunnelService.class);
+        TunnelHopService tunnelHopService = mock(TunnelHopService.class);
         ForwardHopPortService hopPortService = mock(ForwardHopPortService.class);
         reservationService = new PortReservationService(
-                jdbcTemplate, nodeService, tunnelService, hopPortService);
+                jdbcTemplate, nodeService, tunnelHopService, hopPortService);
 
         Node node = new Node();
         node.setId(9L);

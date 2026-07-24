@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:5.7
+    image: ${MYSQL_IMAGE:-mysql:8.4}
     container_name: gost-mysql
     restart: unless-stopped
     environment:
@@ -13,7 +13,6 @@ services:
       - mysql_data:/var/lib/mysql
       - ./gost.sql:/docker-entrypoint-initdb.d/init.sql:ro
     command: >
-      --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --max_connections=1000
@@ -26,7 +25,7 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/su-cyber-art/flux-panel-api:1.5.3
+    image: ghcr.io/su-cyber-art/flux-panel-api:${APP_VERSION:-latest}
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -35,6 +34,7 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
+      APP_VERSION: ${APP_VERSION:-dev}
       LOG_DIR: /app/logs
       JAVA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
     ports:
@@ -54,7 +54,7 @@ services:
       start_period: 90s
 
   frontend:
-    image: ghcr.io/su-cyber-art/flux-panel-frontend:1.5.3
+    image: ghcr.io/su-cyber-art/flux-panel-frontend:${APP_VERSION:-latest}
     container_name: vite-frontend
     restart: unless-stopped
     ports:
@@ -68,7 +68,7 @@ services:
 
 volumes:
   mysql_data:
-    name: mysql_data
+    name: ${MYSQL_VOLUME_NAME:-mysql_data}
     driver: local
   backend_logs:
     name: backend_logs

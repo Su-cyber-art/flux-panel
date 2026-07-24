@@ -10,15 +10,14 @@ import com.admin.common.dto.CaptchaVerifyDto;
 import com.admin.common.lang.R;
 import com.admin.entity.ViteConfig;
 import com.admin.service.ViteConfigService;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import cloud.tianai.captcha.application.vo.CaptchaResponse;
 
-import javax.annotation.Resource;
-import javax.validation.Valid;
+import jakarta.annotation.Resource;
+import jakarta.validation.Valid;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.ThreadLocalRandom;
@@ -49,7 +48,7 @@ public class CaptchaController extends BaseController {
 
 
     @PostMapping("/generate")
-    public CaptchaResponse<ImageCaptchaVO> genCaptcha() {
+    public ApiResponse<ImageCaptchaVO> genCaptcha() {
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "captcha_type"));
         String captchaType;
         if (viteConfig == null || Objects.equals(viteConfig.getValue(), "RANDOM")) {

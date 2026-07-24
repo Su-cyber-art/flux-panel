@@ -1,4 +1,6 @@
 spring:
+  application:
+    name: flux-panel-backend
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${DB_HOST}:3306/${DB_NAME}?useUnicode=true&useSSL=false&characterEncoding=utf8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
@@ -47,6 +49,7 @@ mybatis-plus:
 
 jwt-secret: ${JWT_SECRET}
 log-dir: ${LOG_DIR}
+app-version: ${APP_VERSION:dev}
 
 
 captcha:

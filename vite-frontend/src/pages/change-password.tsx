@@ -2,7 +2,7 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "@/router";
 import toast from 'react-hot-toast';
 
 import { title } from "@/components/primitives";

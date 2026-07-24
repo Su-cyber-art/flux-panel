@@ -9,10 +9,16 @@ export LC_ALL=C
 
 # 全局下载地址配置
 REPOSITORY="Su-cyber-art/flux-panel"
-VERSION="1.5.3"
-DOCKER_COMPOSEV4_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/docker-compose-v6.yml"
-GOST_SQL_URL="https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost.sql"
+RELEASE_TAG="${FLUX_VERSION:-__FLUX_VERSION__}"
+if [[ "$RELEASE_TAG" == __*__ ]]; then
+    echo "错误：该脚本尚未注入发布版本，请从 GitHub Release 下载或设置 FLUX_VERSION。" >&2
+    exit 1
+fi
+VERSION="${RELEASE_TAG#v}"
+DOCKER_COMPOSEV4_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/docker-compose-v6.yml"
+GOST_SQL_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/gost.sql"
+MYSQL_UPGRADE_GUIDE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/mysql-5.7-to-8.4.md"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -49,6 +55,55 @@ check_docker() {
     exit 1
   fi
   echo "检测到 Docker 命令：$DOCKER_CMD"
+}
+
+guard_mysql_major_upgrade() {
+  local current_image
+  current_image=$(docker inspect --format '{{.Config.Image}}' gost-mysql 2>/dev/null || true)
+  local configured_image
+  configured_image=$(grep "^MYSQL_IMAGE=" .env 2>/dev/null | cut -d'=' -f2- || true)
+  local unmarked_existing_volume=false
+
+  if [[ -z "$current_image" && -z "$configured_image" ]] \
+      && docker volume inspect mysql_data >/dev/null 2>&1; then
+    unmarked_existing_volume=true
+  fi
+
+  if [[ "$current_image" == *"mysql:5.7"* || "$configured_image" == *"mysql:5.7"* \
+      || "$unmarked_existing_volume" == "true" ]]; then
+    echo "❌ 检测到 MySQL 5.7 或版本未知的旧数据卷。MySQL 不支持直接从 5.7 升级到 8.4。"
+    echo "🛡️ 本次更新已在停止容器前中止，现有数据和服务未被修改。"
+    echo "📖 请先按迁移指南完成 5.7 → 8.0 → 8.4："
+    echo "   $MYSQL_UPGRADE_GUIDE_URL"
+    return 1
+  fi
+}
+
+set_app_version_env() {
+  local temp_env=".env.tmp.$$"
+
+  if [[ ! -f ".env" ]]; then
+    echo "APP_VERSION=$VERSION" > .env
+    return
+  fi
+
+  awk -v version="$VERSION" '
+    BEGIN { updated = 0 }
+    /^APP_VERSION=/ {
+      if (!updated) {
+        print "APP_VERSION=" version
+        updated = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!updated) {
+        print "APP_VERSION=" version
+      }
+    }
+  ' .env > "$temp_env"
+  mv "$temp_env" .env
 }
 
 # 检测系统是否支持 IPv6
@@ -222,6 +277,9 @@ DB_PASSWORD=$DB_PASSWORD
 JWT_SECRET=$JWT_SECRET
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
+APP_VERSION=$VERSION
+MYSQL_IMAGE=mysql:8.4
+MYSQL_VOLUME_NAME=mysql_data
 EOF
 
   echo "🚀 启动 docker 服务..."
@@ -239,12 +297,14 @@ EOF
 update_panel() {
   echo "🔄 开始更新面板..."
   check_docker
+  guard_mysql_major_upgrade
 
   echo "🔽 下载最新配置文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
   curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
   echo "✅ 下载完成"
+  set_app_version_env
 
   # 自动检测并配置 IPv6 支持
   if check_ipv6_support; then

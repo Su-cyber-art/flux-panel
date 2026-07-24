@@ -1,8 +1,8 @@
 module github.com/go-gost/x
 
-go 1.22.0
+go 1.26.0
 
-toolchain go1.23.4
+toolchain go1.26.5
 
 require github.com/shirou/gopsutil/v3 v3.24.5
 

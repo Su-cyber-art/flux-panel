@@ -1,4 +1,4 @@
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { Route, Routes, useNavigate } from "@/router";
 import { useEffect, useState } from "react";
 
 import IndexPage from "@/pages/index";

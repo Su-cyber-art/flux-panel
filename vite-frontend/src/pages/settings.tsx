@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input } from "@heroui/input";
 import { Button } from "@heroui/button";
 import { Card, CardBody } from "@heroui/card";
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '@/router';
 import toast from 'react-hot-toast';
 import { reinitializeBaseURL } from '@/api/network';
 import { 

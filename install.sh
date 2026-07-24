@@ -1,5 +1,11 @@
 #!/bin/bash
 
+FLUX_RELEASE_TAG="${FLUX_VERSION:-__FLUX_VERSION__}"
+if [[ "$FLUX_RELEASE_TAG" == __*__ ]]; then
+    echo "错误：该脚本尚未注入发布版本，请从 GitHub Release 下载或设置 FLUX_VERSION。" >&2
+    exit 1
+fi
+
 # 获取系统架构
 get_architecture() {
     ARCH=$(uname -m)
@@ -20,8 +26,7 @@ get_architecture() {
 build_download_url() {
     local ARCH=$(get_architecture)
     local REPOSITORY="Su-cyber-art/flux-panel"
-    local VERSION="1.5.3"
-    echo "https://github.com/${REPOSITORY}/releases/download/${VERSION}/gost-${ARCH}"
+    echo "https://github.com/${REPOSITORY}/releases/download/${FLUX_RELEASE_TAG}/gost-${ARCH}"
 }
 
 # 下载地址

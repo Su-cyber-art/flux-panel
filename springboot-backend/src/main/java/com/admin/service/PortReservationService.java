@@ -26,7 +26,7 @@ public class PortReservationService {
 
     private final JdbcTemplate jdbcTemplate;
     private final NodeService nodeService;
-    private final TunnelService tunnelService;
+    private final TunnelHopService tunnelHopService;
     private final ForwardHopPortService forwardHopPortService;
 
     public PortAllocation reserveForCreate(Tunnel tunnel, Integer requestedInPort) {
@@ -65,7 +65,7 @@ public class PortReservationService {
             Integer outPort = null;
             Map<Long, Integer> relayPorts = new LinkedHashMap<>();
             if (tunnel.getType() == TUNNEL_FORWARD_TYPE) {
-                List<Long> relayNodeIds = tunnelService.getRelayNodeIds(tunnel);
+                List<Long> relayNodeIds = tunnelHopService.listRelayNodeIds(tunnel);
                 Map<Long, Integer> existingRelayPorts =
                         existingForward == null || reallocate
                                 ? Collections.emptyMap()

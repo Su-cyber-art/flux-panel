@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from '@/router';
 import { Button } from "@heroui/button";
 
 import { Logo } from '@/components/icons';

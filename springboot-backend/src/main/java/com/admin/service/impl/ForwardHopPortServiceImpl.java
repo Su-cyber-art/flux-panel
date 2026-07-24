@@ -4,7 +4,7 @@ import com.admin.entity.ForwardHopPort;
 import com.admin.mapper.ForwardHopPortMapper;
 import com.admin.service.ForwardHopPortService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

@@ -43,7 +43,7 @@ public class UserTunnel implements Serializable {
 
     private Long expTime;
 
-    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Integer speedId;
 
     private Integer num;

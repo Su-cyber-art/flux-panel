@@ -1,7 +1,7 @@
 package com.admin.service;
 
 import com.admin.entity.ForwardHopPort;
-import com.baomidou.mybatisplus.extension.service.IService;
+import com.baomidou.mybatisplus.spring.service.IService;
 
 import java.util.List;
 import java.util.Map;

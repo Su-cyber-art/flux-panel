@@ -1,7 +1,7 @@
 package com.admin.common.utils;
 
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
