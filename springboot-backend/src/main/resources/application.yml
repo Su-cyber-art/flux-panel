@@ -8,11 +8,17 @@ spring:
       max-lifetime: 500000
       connection-timeout: 30000
       idle-timeout: 600000
-      max-pool-size: 20
+      maximum-pool-size: 20
       minimum-idle: 5
       pool-name: HikariCP
       auto-commit: true
       connection-test-query: SELECT 1
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
   servlet:
     multipart:
       max-file-size: 50MB
@@ -24,7 +30,8 @@ server:
   port: 6365
   tomcat:
     uri-encoding: UTF-8
-    max-thread: 800
+    threads:
+      max: 800
     max-connections: 2000
   shutdown: graceful
   error:

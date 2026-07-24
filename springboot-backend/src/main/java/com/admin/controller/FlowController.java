@@ -1,29 +1,25 @@
 package com.admin.controller;
 
 import com.admin.common.aop.LogAnnotation;
+import com.admin.common.dto.FlowBatchDto;
 import com.admin.common.dto.FlowDto;
 import com.admin.common.dto.GostConfigDto;
 import com.admin.common.lang.R;
 import com.admin.common.task.CheckGostConfigAsync;
 import com.admin.common.utils.AESCrypto;
-import com.admin.common.utils.GostUtil;
 import com.admin.entity.*;
+import com.admin.service.FlowAccountingService;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.web.bind.annotation.*;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.annotation.Resource;
-import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * 流量上报控制器
@@ -40,10 +36,8 @@ import java.util.stream.Collectors;
  * 8. 检查转发状态，状态不为1时暂停对应转发
  * 9. 检查用户隧道权限状态，状态不为1时暂停对应转发
  * <p>
- * 并发安全解决方案：
- * 1. 使用UpdateWrapper进行数据库层面的原子更新操作，避免读取-修改-写入的竞态条件
- * 2. 使用synchronized锁确保同一用户/隧道的流量更新串行执行
- * 3. 这样可以避免相同用户相同隧道不同转发同时上报时流量统计丢失的问题
+ * 新节点使用带进程实例和单调序列号的绝对计数批次。服务端在一个数据库
+ * 事务内完成去重、增量计算和三张业务表记账；旧节点的单条增量接口继续兼容。
  */
 @RestController
 @RequestMapping("/flow")
@@ -53,19 +47,16 @@ public class FlowController extends BaseController {
 
     // 常量定义
     private static final String SUCCESS_RESPONSE = "ok";
-    private static final String DEFAULT_USER_TUNNEL_ID = "0";
     private static final long BYTES_TO_GB = 1024L * 1024L * 1024L;
-
-    // 用于同步相同用户和隧道的流量更新操作
-    private static final ConcurrentHashMap<String, Object> USER_LOCKS = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Object> TUNNEL_LOCKS = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Object> FORWARD_LOCKS = new ConcurrentHashMap<>();
 
     // 缓存加密器实例，避免重复创建
     private static final ConcurrentHashMap<String, AESCrypto> CRYPTO_CACHE = new ConcurrentHashMap<>();
 
     @Resource
     CheckGostConfigAsync checkGostConfigAsync;
+
+    @Resource
+    FlowAccountingService flowAccountingService;
 
     /**
      * 加密消息包装器
@@ -137,27 +128,41 @@ public class FlowController extends BaseController {
      * @param secret  节点密钥
      * @return 处理结果
      */
-    @RequestMapping("/upload")
+    @PostMapping("/upload")
     @LogAnnotation
     public String uploadFlowData(@RequestBody String rawData, String secret) {
-        // 1. 验证节点权限
-        if (!isValidNode(secret)) {
+        Node node = findNodeBySecret(secret);
+        if (node == null) {
             return SUCCESS_RESPONSE;
         }
 
-        // 2. 尝试解密数据
         String decryptedData = decryptIfNeeded(rawData, secret);
-
-        // 3. 解析为FlowDto列表
-        FlowDto flowDataList = JSONObject.parseObject(decryptedData, FlowDto.class);
-        if (Objects.equals(flowDataList.getN(), "web_api")) {
+        FlowDto flowData = JSONObject.parseObject(decryptedData, FlowDto.class);
+        if (flowData == null || Objects.equals(flowData.getN(), "web_api")) {
             return SUCCESS_RESPONSE;
         }
 
-        // 记录日志
-        log.info("节点上报流量数据{}", flowDataList);
-        // 4. 处理流量数据
-        return processFlowData(flowDataList);
+        FlowAccountingService.AccountingResult result =
+                flowAccountingService.accountLegacy(node, flowData);
+        enforceLimits(result);
+        return SUCCESS_RESPONSE;
+    }
+
+    @PostMapping("/upload/batch")
+    public String uploadFlowBatch(@RequestBody String rawData, String secret) {
+        Node node = findNodeBySecret(secret);
+        if (node == null) {
+            return SUCCESS_RESPONSE;
+        }
+
+        String decryptedData = decryptIfNeeded(rawData, secret);
+        FlowBatchDto batch = JSONObject.parseObject(decryptedData, FlowBatchDto.class);
+        FlowAccountingService.AccountingResult result =
+                flowAccountingService.accountBatch(node, batch);
+        enforceLimits(result);
+        log.debug("节点 {} 流量批次 {} 处理完成，重复={}",
+                node.getId(), batch.getSequence(), result.isDuplicate());
+        return SUCCESS_RESPONSE;
     }
 
     /**
@@ -211,39 +216,17 @@ public class FlowController extends BaseController {
         return CRYPTO_CACHE.computeIfAbsent(secret, AESCrypto::create);
     }
 
-    /**
-     * 处理流量数据的核心逻辑
-     */
-    private String processFlowData(FlowDto flowDataList) {
-        // 每个远端跳点都会观察到同一份链路流量，只按入口 TCP/UDP 服务计费。
-        if (flowDataList.getN() == null || flowDataList.getN().endsWith("_tls")) {
-            return SUCCESS_RESPONSE;
+    private void enforceLimits(FlowAccountingService.AccountingResult result) {
+        for (Integer userId : result.getUserIds()) {
+            checkUserRelatedLimits(userId.toString());
         }
-        String[] serviceIds = parseServiceName(flowDataList.getN());
-        String forwardId = serviceIds[0];
-        String userId = serviceIds[1];
-        String userTunnelId = serviceIds[2];
-
-        Forward forward = forwardService.getById(forwardId);
-
-        // 获取流量计费类型
-        int flowType = getFlowType(forward);
-
-        //  处理流量倍率及单双向计算
-        FlowDto flowStats = filterFlowData(flowDataList, forward, flowType);
-
-        // 先更新所有流量统计 - 确保流量数据的一致性
-        updateForwardFlow(forwardId, flowStats);
-        updateUserFlow(userId, flowStats);
-        updateUserTunnelFlow(userTunnelId, flowStats);
-
-        // 7. 检查和服务暂停操作
-        if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
-            checkUserRelatedLimits(userId);
-            checkUserTunnelRelatedLimits(userTunnelId, userId);
+        for (Integer userTunnelId : result.getUserTunnelIds()) {
+            UserTunnel userTunnel = userTunnelService.getById(userTunnelId);
+            if (userTunnel != null) {
+                checkUserTunnelRelatedLimits(
+                        userTunnelId.toString(), userTunnel.getUserId().toString());
+            }
         }
-
-        return SUCCESS_RESPONSE;
     }
 
     private void checkUserRelatedLimits(String userId) {
@@ -273,7 +256,9 @@ public class FlowController extends BaseController {
     }
 
     public void pauseAllUserServices(String userId) {
-        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("user_id", userId));
+        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>()
+                .eq("user_id", userId)
+                .eq("delete_requested", 0));
         pauseService(forwardList);
     }
 
@@ -300,161 +285,23 @@ public class FlowController extends BaseController {
     }
 
     private void pauseSpecificForward(Integer tunnelId, String userId) {
-        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>().eq("tunnel_id", tunnelId).eq("user_id", userId));
+        List<Forward> forwardList = forwardService.list(new QueryWrapper<Forward>()
+                .eq("tunnel_id", tunnelId)
+                .eq("user_id", userId)
+                .eq("delete_requested", 0));
         pauseService(forwardList);
     }
 
     public void pauseService(List<Forward> forwardList) {
-        Map<String, Integer> userTunnelIds = getUserTunnelIds(forwardList);
         for (Forward forward : forwardList) {
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-            if (tunnel != null){
-                String name = buildServiceName(forward, userTunnelIds);
-                pauseEntryService(tunnel.getInNodeId(), name);
-                if (tunnel.getType() == 2){
-                    for (Long relayNodeId : tunnelService.getRelayNodeIds(tunnel)) {
-                        pauseRelayService(relayNodeId, name);
-                    }
-                }
-            }
-            forward.setStatus(0);
-            forwardService.updateById(forward);
+            forwardService.requestForwardStatus(forward.getId(), 0);
         }
     }
 
-    private Map<String, Integer> getUserTunnelIds(List<Forward> forwardList) {
-        Set<Integer> userIds = forwardList.stream()
-                .map(Forward::getUserId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        Set<Integer> tunnelIds = forwardList.stream()
-                .map(Forward::getTunnelId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        if (userIds.isEmpty() || tunnelIds.isEmpty()) {
-            return Map.of();
+    private Node findNodeBySecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            return null;
         }
-
-        return userTunnelService.list(new QueryWrapper<UserTunnel>()
-                        .in("user_id", userIds)
-                        .in("tunnel_id", tunnelIds))
-                .stream()
-                .collect(Collectors.toMap(
-                        userTunnel -> buildUserTunnelKey(userTunnel.getUserId(), userTunnel.getTunnelId()),
-                        UserTunnel::getId,
-                        (existing, ignored) -> existing));
-    }
-
-    private String buildServiceName(Forward forward, Map<String, Integer> userTunnelIds) {
-        Integer userTunnelId = userTunnelIds.getOrDefault(
-                buildUserTunnelKey(forward.getUserId(), forward.getTunnelId()), 0);
-        return buildServiceName(
-                forward.getId().toString(),
-                forward.getUserId().toString(),
-                userTunnelId.toString());
-    }
-
-    private String buildUserTunnelKey(Integer userId, Integer tunnelId) {
-        return userId + ":" + tunnelId;
-    }
-
-    protected void pauseEntryService(Long nodeId, String name) {
-        GostUtil.PauseService(nodeId, name);
-    }
-
-    protected void pauseRelayService(Long nodeId, String name) {
-        GostUtil.PauseRemoteService(nodeId, name);
-    }
-
-    private FlowDto filterFlowData(FlowDto flowDto, Forward forward, int flowType) {
-        if (forward != null) {
-            Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-            if (tunnel != null) {
-                BigDecimal trafficRatio = tunnel.getTrafficRatio();
-
-                BigDecimal originalD = BigDecimal.valueOf(flowDto.getD());
-                BigDecimal originalU = BigDecimal.valueOf(flowDto.getU());
-
-                BigDecimal newD = originalD.multiply(trafficRatio);
-                BigDecimal newU = originalU.multiply(trafficRatio);
-
-                flowDto.setD(newD.longValue() * flowType);
-                flowDto.setU(newU.longValue() * flowType);
-            }
-        }
-        return flowDto;
-    }
-
-    private int getFlowType(Forward forward) {
-        int defaultFlowType = 2;
-        if (forward == null) return defaultFlowType;
-        Tunnel tunnel = tunnelService.getById(forward.getTunnelId());
-        if (tunnel == null) return defaultFlowType;
-        return tunnel.getFlow();
-    }
-
-    private void updateForwardFlow(String forwardId, FlowDto flowStats) {
-        // 对相同转发的流量更新进行同步，避免并发覆盖
-        synchronized (getForwardLock(forwardId)) {
-            UpdateWrapper<Forward> updateWrapper = new UpdateWrapper<>();
-            updateWrapper.eq("id", forwardId);
-            updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
-            updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
-
-            forwardService.update(null, updateWrapper);
-        }
-    }
-
-    private void updateUserFlow(String userId, FlowDto flowStats) {
-        // 对相同用户的流量更新进行同步，避免并发覆盖
-        synchronized (getUserLock(userId)) {
-            UpdateWrapper<User> updateWrapper = new UpdateWrapper<>();
-            updateWrapper.eq("id", userId);
-
-            updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
-            updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
-
-            userService.update(null, updateWrapper);
-        }
-    }
-
-    private void updateUserTunnelFlow(String userTunnelId, FlowDto flowStats) {
-        if (Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) {
-            return; // 默认隧道不需要更新，返回成功
-        }
-
-        // 对相同用户隧道的流量更新进行同步，避免并发覆盖
-        synchronized (getTunnelLock(userTunnelId)) {
-            UpdateWrapper<UserTunnel> updateWrapper = new UpdateWrapper<>();
-            updateWrapper.eq("id", userTunnelId);
-            updateWrapper.setSql("in_flow = in_flow + " + flowStats.getD());
-            updateWrapper.setSql("out_flow = out_flow + " + flowStats.getU());
-            userTunnelService.update(null, updateWrapper);
-        }
-    }
-
-    private Object getUserLock(String userId) {
-        return USER_LOCKS.computeIfAbsent(userId, k -> new Object());
-    }
-
-    private Object getTunnelLock(String userTunnelId) {
-        return TUNNEL_LOCKS.computeIfAbsent(userTunnelId, k -> new Object());
-    }
-
-    private Object getForwardLock(String forwardId) {
-        return FORWARD_LOCKS.computeIfAbsent(forwardId, k -> new Object());
-    }
-
-    private boolean isValidNode(String secret) {
-        int nodeCount = nodeService.count(new QueryWrapper<Node>().eq("secret", secret));
-        return nodeCount > 0;
-    }
-
-    private String[] parseServiceName(String serviceName) {
-        return serviceName.split("_");
-    }
-
-    private String buildServiceName(String forwardId, String userId, String userTunnelId) {
-        return forwardId + "_" + userId + "_" + userTunnelId;
+        return nodeService.getOne(new QueryWrapper<Node>().eq("secret", secret));
     }
 }

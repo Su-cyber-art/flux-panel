@@ -13,6 +13,8 @@
             f.out_port AS outPort,
             f.remote_addr AS remoteAddr,
             f.status,
+            f.sync_status AS syncStatus,
+            f.sync_error AS syncError,
             f.created_time AS createdTime,
             f.updated_time AS updatedTime,
             f.user_name AS userName,
@@ -26,11 +28,13 @@
             t.out_ip AS outIp,
             t.type,
             t.protocol
-        FROM 
+        FROM
             forward f
-        LEFT JOIN 
+        LEFT JOIN
             tunnel t ON f.tunnel_id = t.id
-        ORDER BY 
+        WHERE
+            f.delete_requested = 0
+        ORDER BY
             f.created_time DESC
     </select>
 
@@ -45,6 +49,8 @@
             f.out_port AS outPort,
             f.remote_addr AS remoteAddr,
             f.status,
+            f.sync_status AS syncStatus,
+            f.sync_error AS syncError,
             f.created_time AS createdTime,
             f.updated_time AS updatedTime,
             f.user_name AS userName,
@@ -62,8 +68,9 @@
             forward f
         LEFT JOIN 
             tunnel t ON f.tunnel_id = t.id
-        WHERE 
+        WHERE
             f.user_id = #{userId}
+            AND f.delete_requested = 0
         ORDER BY 
             f.created_time DESC
     </select>

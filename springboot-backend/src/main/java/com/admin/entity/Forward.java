@@ -42,4 +42,12 @@ public class Forward extends BaseEntity{
 
     private Integer inx;
 
+    private String syncStatus;
+
+    private String syncError;
+
+    private Boolean deleteRequested;
+
+    private String portReservationToken;
+
 }

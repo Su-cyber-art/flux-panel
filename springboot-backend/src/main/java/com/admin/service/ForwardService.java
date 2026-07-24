@@ -75,6 +75,21 @@ public interface ForwardService extends IService<Forward> {
     R resumeForward(Long id);
 
     /**
+     * Internal desired-state status change used by quota enforcement.
+     */
+    void requestForwardStatus(Long id, int status);
+
+    /**
+     * Reconcile the current database state to GOST.
+     */
+    R reconcileForward(Long id, Long oldTunnelId, String oldServiceName);
+
+    /**
+     * Reconcile a pending deletion and remove the database record afterwards.
+     */
+    R reconcileForwardDeletion(Long id, Long tunnelId, String serviceName);
+
+    /**
      * 转发诊断功能
      * @param id 转发ID
      * @return 诊断结果

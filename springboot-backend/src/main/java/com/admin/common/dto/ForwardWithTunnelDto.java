@@ -39,6 +39,10 @@ public class ForwardWithTunnelDto {
      * 转发状态
      */
     private Integer status;
+
+    private String syncStatus;
+
+    private String syncError;
     
     /**
      * 创建时间

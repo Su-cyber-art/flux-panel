@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -54,22 +53,13 @@ var needWrap = false
 
 // SetProtocolBlock sets protocol blocking switches and recomputes wrapper need
 func SetProtocolBlock(httpOn int, tlsOn int, socksOn int) {
-    isHttp = httpOn
-    isTls = tlsOn
-    isSocks = socksOn
-    needWrap = isTls+isSocks+isHttp > 0
+	isHttp = httpOn
+	isTls = tlsOn
+	isSocks = socksOn
+	needWrap = isTls+isSocks+isHttp > 0
 }
 
 type Option func(opts *options)
-
-func init() {
-	_, err := LoadConfig("config.json")
-	fmt.Println("config.json loaded")
-	if err != nil {
-		log.Fatal(err)
-	}
-	needWrap = isTls+isSocks+isHttp > 0
-}
 
 func AdmissionOption(admission admission.Admission) Option {
 	return func(opts *options) {
@@ -402,21 +392,6 @@ func (s *defaultService) observeStats(ctx context.Context) {
 						OutputBytes:  outputBytes,
 						TotalErrs:    st.Get(stats.KindTotalErrs),
 					},
-				}
-				if outputBytes > 0 || inputBytes > 0 {
-					reportItems := TrafficReportItem{
-						N: s.name,
-						U: int64(outputBytes),
-						D: int64(inputBytes),
-					}
-					success, err := sendTrafficReport(ctx, reportItems)
-					if err != nil {
-						fmt.Printf("发送流量报告失败: %v", err)
-					} else if success {
-						if xstats, ok := st.(*xstats.Stats); ok {
-							xstats.ResetTraffic(st.Get(stats.KindInputBytes)-inputBytes, st.Get(stats.KindOutputBytes)-outputBytes)
-						}
-					}
 				}
 
 				if err := s.options.observer.Observe(ctx, evs); err != nil {
