@@ -20,7 +20,7 @@
 ### 安装面板
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/main/panel_install.sh -o panel_install.sh \
+curl -fsSL https://github.com/Su-cyber-art/flux-panel/releases/latest/download/panel_install.sh -o panel_install.sh \
   && chmod +x panel_install.sh \
   && sudo ./panel_install.sh
 ```
@@ -37,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/
 先在面板中创建节点并取得节点密钥，然后在节点服务器执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/main/install.sh -o install.sh \
+curl -fsSL https://github.com/Su-cyber-art/flux-panel/releases/latest/download/install.sh -o install.sh \
   && chmod +x install.sh \
   && sudo ./install.sh
 ```
@@ -50,4 +50,24 @@ sudo ./install.sh -a "面板服务器地址:6365" -s "节点密钥"
 
 ### 更新
 
-重新下载对应脚本并运行，面板端或节点端均选择菜单中的 `2. 更新`。从旧版本升级面板时，后端会自动补齐多跳转发所需的数据表；所有节点也应更新到相同版本。
+节点端可直接执行以下命令。脚本会自动选择最新稳定版、校验下载
+的二进制版本，并在新版本启动失败时恢复旧版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Su-cyber-art/flux-panel/refs/heads/main/install.sh -o install.sh \
+  && chmod +x install.sh \
+  && sudo ./install.sh --update
+```
+
+面板端必须进入原部署目录（包含 `.env` 和 `docker-compose.yml`）后更新：
+
+```bash
+curl -fsSL https://github.com/Su-cyber-art/flux-panel/releases/latest/download/panel_install.sh -o panel_install.sh \
+  && chmod +x panel_install.sh \
+  && sudo ./panel_install.sh
+```
+
+运行面板脚本后选择 `2. 更新面板`。更新前应先通过菜单中的
+`4. 导出备份` 备份数据库，并另外保存 `.env`。MySQL 5.7 不能直接使用
+MySQL 8.4 数据目录；升级前请先阅读对应 Release 中的
+`mysql-5.7-to-8.4.md`。面板更新完成后，所有节点也应更新到相同版本。

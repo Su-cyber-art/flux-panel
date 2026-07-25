@@ -1,15 +1,81 @@
 #!/bin/bash
 
+REPOSITORY="Su-cyber-art/flux-panel"
+
+resolve_latest_release_tag() {
+    local latest_url
+    local latest_tag
+
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "错误：未找到 curl，无法查询最新版本。" >&2
+        return 1
+    fi
+
+    latest_url=$(curl -fsSL \
+        --retry 3 \
+        --retry-delay 2 \
+        --connect-timeout 10 \
+        --max-time 30 \
+        -o /dev/null \
+        -w '%{url_effective}' \
+        "https://github.com/${REPOSITORY}/releases/latest") || return 1
+    latest_url="${latest_url%/}"
+    latest_tag="${latest_url##*/}"
+
+    if [[ ! "$latest_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+        echo "错误：GitHub 返回了无效版本号：$latest_tag" >&2
+        return 1
+    fi
+
+    printf '%s\n' "$latest_tag"
+}
+
 FLUX_RELEASE_TAG="${FLUX_VERSION:-__FLUX_VERSION__}"
-if [[ "$FLUX_RELEASE_TAG" == __*__ ]]; then
-    echo "错误：该脚本尚未注入发布版本，请从 GitHub Release 下载或设置 FLUX_VERSION。" >&2
-    exit 1
+if [[ "$FLUX_RELEASE_TAG" == __*__ || "$FLUX_RELEASE_TAG" == "latest" ]]; then
+    if ! FLUX_RELEASE_TAG=$(resolve_latest_release_tag); then
+        echo "错误：无法获取最新稳定版，可通过 FLUX_VERSION 指定版本。" >&2
+        exit 1
+    fi
+    echo "ℹ️ 自动选择最新稳定版：$FLUX_RELEASE_TAG"
 fi
+EXPECTED_VERSION="${FLUX_RELEASE_TAG#v}"
+
+download_file() {
+    local url="$1"
+    local output="$2"
+
+    curl -fL \
+        --retry 3 \
+        --retry-delay 2 \
+        --connect-timeout 15 \
+        --max-time 300 \
+        "$url" \
+        -o "$output"
+}
+
+validate_gost_binary() {
+    local binary="$1"
+    local reported_version
+
+    chmod +x "$binary"
+    if ! reported_version=$("$binary" -V 2>&1); then
+        echo "❌ 下载的文件无法执行，已取消操作。" >&2
+        return 1
+    fi
+
+    if [[ "$reported_version" != "gost ${EXPECTED_VERSION}"* ]]; then
+        echo "❌ 版本校验失败，期望 ${EXPECTED_VERSION}，实际：${reported_version}" >&2
+        return 1
+    fi
+
+    echo "🔎 已验证版本：$reported_version"
+}
 
 # 获取系统架构
 get_architecture() {
-    ARCH=$(uname -m)
-    case $ARCH in
+    local arch
+    arch=$(uname -m)
+    case $arch in
         x86_64)
             echo "amd64"
             ;;
@@ -17,22 +83,23 @@ get_architecture() {
             echo "arm64"
             ;;
         *)
-            echo "amd64"  # 默认使用 amd64
+            echo "错误：不支持的系统架构：$arch" >&2
+            return 1
             ;;
     esac
 }
 
 # 构建下载地址
 build_download_url() {
-    local ARCH=$(get_architecture)
-    local REPOSITORY="Su-cyber-art/flux-panel"
-    echo "https://github.com/${REPOSITORY}/releases/download/${FLUX_RELEASE_TAG}/gost-${ARCH}"
+    local arch
+    arch=$(get_architecture) || return 1
+    echo "https://github.com/${REPOSITORY}/releases/download/${FLUX_RELEASE_TAG}/gost-${arch}"
 }
 
 # 下载地址
-DOWNLOAD_URL=$(build_download_url)
-INSTALL_DIR="/etc/gost"
-COUNTRY=$(curl -s https://ipinfo.io/country)
+DOWNLOAD_URL=$(build_download_url) || exit 1
+INSTALL_DIR="${GOST_INSTALL_DIR:-/etc/gost}"
+COUNTRY=$(curl -fsSL --connect-timeout 5 --max-time 10 https://ipinfo.io/country 2>/dev/null || true)
 if [ "$COUNTRY" = "CN" ]; then
     # 拼接 URL
     DOWNLOAD_URL="https://ghfast.top/${DOWNLOAD_URL}"
@@ -152,6 +219,18 @@ get_config_params() {
 }
 
 # 解析命令行参数
+ACTION=""
+case "${1:-}" in
+  --update|update)
+    ACTION="update"
+    shift
+    ;;
+  --help|-h)
+    echo "用法：$0 [--update] [-a 面板地址] [-s 节点密钥]"
+    exit 0
+    ;;
+esac
+
 while getopts "a:s:" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
@@ -159,6 +238,11 @@ while getopts "a:s:" opt; do
     *) echo "❌ 无效参数"; exit 1 ;;
   esac
 done
+shift $((OPTIND - 1))
+if [[ $# -gt 0 ]]; then
+  echo "❌ 无效参数: $*" >&2
+  exit 1
+fi
 
 # 安装功能
 install_gost() {
@@ -171,6 +255,20 @@ install_gost() {
 
   mkdir -p "$INSTALL_DIR"
 
+  local new_binary
+  new_binary=$(mktemp "$INSTALL_DIR/gost.new.XXXXXX") || return 1
+
+  echo "⬇️ 下载 gost 中..."
+  if ! download_file "$DOWNLOAD_URL" "$new_binary"; then
+    echo "❌ 下载失败，请检查网络或下载链接。"
+    rm -f "$new_binary"
+    return 1
+  fi
+  if ! validate_gost_binary "$new_binary"; then
+    rm -f "$new_binary"
+    return 1
+  fi
+
   # 停止并禁用已有服务
   if systemctl list-units --full -all | grep -Fq "gost.service"; then
     echo "🔍 检测到已存在的gost服务"
@@ -178,16 +276,7 @@ install_gost() {
     systemctl disable gost 2>/dev/null && echo "🚫 禁用自启"
   fi
 
-  # 删除旧文件
-  [[ -f "$INSTALL_DIR/gost" ]] && echo "🧹 删除旧文件 gost" && rm -f "$INSTALL_DIR/gost"
-
-  # 下载 gost
-  echo "⬇️ 下载 gost 中..."
-  curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/gost"
-  if [[ ! -f "$INSTALL_DIR/gost" || ! -s "$INSTALL_DIR/gost" ]]; then
-    echo "❌ 下载失败，请检查网络或下载链接。"
-    exit 1
-  fi
+  mv "$new_binary" "$INSTALL_DIR/gost"
   chmod +x "$INSTALL_DIR/gost"
   echo "✅ 下载完成"
 
@@ -248,6 +337,7 @@ EOF
   else
     echo "❌ gost服务启动失败，请执行以下命令查看日志："
     echo "journalctl -u gost -f"
+    return 1
   fi
 }
 
@@ -255,8 +345,12 @@ EOF
 update_gost() {
   echo "🔄 开始更新 GOST..."
   
-  if [[ ! -d "$INSTALL_DIR" ]]; then
+  if [[ ! -x "$INSTALL_DIR/gost" ]]; then
     echo "❌ GOST 未安装，请先选择安装。"
+    return 1
+  fi
+  if ! systemctl cat gost.service >/dev/null 2>&1; then
+    echo "❌ 未找到 gost.service，无法安全更新。"
     return 1
   fi
   
@@ -267,30 +361,66 @@ update_gost() {
   
   # 先下载新版本
   echo "⬇️ 下载最新版本..."
-  curl -L "$DOWNLOAD_URL" -o "$INSTALL_DIR/gost.new"
-  if [[ ! -f "$INSTALL_DIR/gost.new" || ! -s "$INSTALL_DIR/gost.new" ]]; then
+  local new_binary
+  local backup_binary="$INSTALL_DIR/gost.backup"
+  new_binary=$(mktemp "$INSTALL_DIR/gost.new.XXXXXX") || return 1
+  if ! download_file "$DOWNLOAD_URL" "$new_binary"; then
     echo "❌ 下载失败。"
+    rm -f "$new_binary"
+    return 1
+  fi
+  if ! validate_gost_binary "$new_binary"; then
+    rm -f "$new_binary"
+    return 1
+  fi
+
+  if ! cp -a "$INSTALL_DIR/gost" "$backup_binary"; then
+    echo "❌ 无法备份旧版本，已取消更新。"
+    rm -f "$new_binary"
     return 1
   fi
 
   # 停止服务
-  if systemctl list-units --full -all | grep -Fq "gost.service"; then
-    echo "🛑 停止 gost 服务..."
-    systemctl stop gost
+  echo "🛑 停止 gost 服务..."
+  if ! systemctl stop gost; then
+    echo "❌ 无法停止 gost 服务，已取消更新。"
+    rm -f "$new_binary" "$backup_binary"
+    return 1
   fi
 
   # 替换文件
-  mv "$INSTALL_DIR/gost.new" "$INSTALL_DIR/gost"
-  chmod +x "$INSTALL_DIR/gost"
+  if ! mv "$new_binary" "$INSTALL_DIR/gost" || ! chmod +x "$INSTALL_DIR/gost"; then
+    echo "❌ 无法替换二进制，正在恢复旧版本..."
+    mv "$backup_binary" "$INSTALL_DIR/gost"
+    chmod +x "$INSTALL_DIR/gost"
+    systemctl start gost || true
+    return 1
+  fi
   
-  # 打印版本
-  echo "🔎 新版本：$($INSTALL_DIR/gost -V)"
-
   # 重启服务
   echo "🔄 重启服务..."
-  systemctl start gost
+  if systemctl start gost; then
+    sleep 2
+    for _ in {1..15}; do
+      if systemctl is-active --quiet gost; then
+        rm -f "$backup_binary"
+        echo "🔎 新版本：$($INSTALL_DIR/gost -V)"
+        echo "✅ 更新完成，服务已重新启动。"
+        return 0
+      fi
+      sleep 1
+    done
+  fi
   
-  echo "✅ 更新完成，服务已重新启动。"
+  echo "❌ 新版本启动失败，正在回滚..."
+  mv "$backup_binary" "$INSTALL_DIR/gost"
+  chmod +x "$INSTALL_DIR/gost"
+  if systemctl start gost && systemctl is-active --quiet gost; then
+    echo "✅ 已恢复旧版本：$($INSTALL_DIR/gost -V)"
+  else
+    echo "❌ 旧版本恢复后仍无法启动，请执行 journalctl -u gost -n 100 查看日志。" >&2
+  fi
+  return 1
 }
 
 # 卸载功能
@@ -330,28 +460,46 @@ uninstall_gost() {
 
 # 主逻辑
 main() {
+  if [[ "$ACTION" == "update" ]]; then
+    if update_gost; then
+      delete_self
+      exit 0
+    fi
+    echo "❌ 更新失败，脚本已保留，便于重试。" >&2
+    exit 1
+  fi
+
   # 如果提供了命令行参数，直接执行安装
   if [[ -n "$SERVER_ADDR" && -n "$SECRET" ]]; then
-    install_gost
-    delete_self
-    exit 0
+    if install_gost; then
+      delete_self
+      exit 0
+    fi
+    echo "❌ 安装失败，脚本已保留，便于重试。" >&2
+    exit 1
   fi
 
   # 显示交互式菜单
   while true; do
     show_menu
-    read -p "请输入选项 (1-5): " choice
+    read -p "请输入选项 (1-4): " choice
     
     case $choice in
       1)
-        install_gost
-        delete_self
-        exit 0
+        if install_gost; then
+          delete_self
+          exit 0
+        fi
+        echo "❌ 安装失败，脚本已保留，便于重试。" >&2
+        exit 1
         ;;
       2)
-        update_gost
-        delete_self
-        exit 0
+        if update_gost; then
+          delete_self
+          exit 0
+        fi
+        echo "❌ 更新失败，脚本已保留，便于重试。" >&2
+        exit 1
         ;;
       3)
         uninstall_gost
@@ -359,17 +507,12 @@ main() {
         exit 0
         ;;
       4)
-        block_protocol
-        delete_self
-        exit 0
-        ;;
-      5)
         echo "👋 退出脚本"
         delete_self
         exit 0
         ;;
       *)
-        echo "❌ 无效选项，请输入 1-5"
+        echo "❌ 无效选项，请输入 1-4"
         echo ""
         ;;
     esac

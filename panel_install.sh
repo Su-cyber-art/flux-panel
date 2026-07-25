@@ -9,10 +9,42 @@ export LC_ALL=C
 
 # 全局下载地址配置
 REPOSITORY="Su-cyber-art/flux-panel"
+
+resolve_latest_release_tag() {
+  local latest_url
+  local latest_tag
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "错误：未找到 curl，无法查询最新版本。" >&2
+    return 1
+  fi
+
+  latest_url=$(curl -fsSL \
+    --retry 3 \
+    --retry-delay 2 \
+    --connect-timeout 10 \
+    --max-time 30 \
+    -o /dev/null \
+    -w '%{url_effective}' \
+    "https://github.com/${REPOSITORY}/releases/latest") || return 1
+  latest_url="${latest_url%/}"
+  latest_tag="${latest_url##*/}"
+
+  if [[ ! "$latest_tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+    echo "错误：GitHub 返回了无效版本号：$latest_tag" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$latest_tag"
+}
+
 RELEASE_TAG="${FLUX_VERSION:-__FLUX_VERSION__}"
-if [[ "$RELEASE_TAG" == __*__ ]]; then
-    echo "错误：该脚本尚未注入发布版本，请从 GitHub Release 下载或设置 FLUX_VERSION。" >&2
+if [[ "$RELEASE_TAG" == __*__ || "$RELEASE_TAG" == "latest" ]]; then
+  if ! RELEASE_TAG=$(resolve_latest_release_tag); then
+    echo "错误：无法获取最新稳定版，可通过 FLUX_VERSION 指定版本。" >&2
     exit 1
+  fi
+  echo "ℹ️ 自动选择最新稳定版：$RELEASE_TAG"
 fi
 VERSION="${RELEASE_TAG#v}"
 DOCKER_COMPOSEV4_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/docker-compose-v4.yml"
@@ -20,7 +52,7 @@ DOCKER_COMPOSEV6_URL="https://github.com/${REPOSITORY}/releases/download/${RELEA
 GOST_SQL_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/gost.sql"
 MYSQL_UPGRADE_GUIDE_URL="https://github.com/${REPOSITORY}/releases/download/${RELEASE_TAG}/mysql-5.7-to-8.4.md"
 
-COUNTRY=$(curl -s https://ipinfo.io/country)
+COUNTRY=$(curl -fsSL --connect-timeout 5 --max-time 10 https://ipinfo.io/country 2>/dev/null || true)
 if [ "$COUNTRY" = "CN" ]; then
     # 拼接 URL
     DOCKER_COMPOSEV4_URL="https://ghfast.top/${DOCKER_COMPOSEV4_URL}"

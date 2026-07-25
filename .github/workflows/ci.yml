@@ -81,3 +81,12 @@ jobs:
         run: |
           go test ./...
           go vet ./...
+
+  installers:
+    name: Installers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test installer bootstrap and rollback
+        run: bash scripts/test-installers.sh
