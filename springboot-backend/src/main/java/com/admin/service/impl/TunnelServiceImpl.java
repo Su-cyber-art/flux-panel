@@ -58,6 +58,10 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
     
     /** 节点状态常量 */
     private static final int NODE_STATUS_ONLINE = 1;        // 节点在线状态
+
+    /** 诊断必须在 WebSocket 命令响应窗口内完成 */
+    static final int DIAGNOSIS_TCP_PING_COUNT = 2;
+    static final int DIAGNOSIS_TCP_PING_TIMEOUT_MILLIS = 3_000;
     
     /** 用户角色常量 */
     private static final int ADMIN_ROLE_ID = 0;             // 管理员角色ID
@@ -835,8 +839,8 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             JSONObject tcpPingData = new JSONObject();
             tcpPingData.put("ip", targetIp);
             tcpPingData.put("port", port);
-            tcpPingData.put("count", 4);
-            tcpPingData.put("timeout", 5000); // 5秒超时
+            tcpPingData.put("count", DIAGNOSIS_TCP_PING_COUNT);
+            tcpPingData.put("timeout", DIAGNOSIS_TCP_PING_TIMEOUT_MILLIS);
 
             // 发送TCP ping命令到节点
             GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing");

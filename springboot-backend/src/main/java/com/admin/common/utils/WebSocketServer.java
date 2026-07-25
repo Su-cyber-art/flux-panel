@@ -28,6 +28,8 @@ import java.util.UUID;
 @Slf4j
 public class WebSocketServer extends TextWebSocketHandler {
 
+    public static final long COMMAND_RESPONSE_TIMEOUT_MILLIS = 10_000L;
+
     @Resource
     NodeService nodeService;
 
@@ -470,7 +472,7 @@ public class WebSocketServer extends TextWebSocketHandler {
             data.put("data", msg);
             data.put("requestId", requestId);
             sendToUser(nodeSession, data.toJSONString(), nodeSecret);
-            GostDto result = future.get(10, TimeUnit.SECONDS);
+            GostDto result = future.get(COMMAND_RESPONSE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
             
             log.info("成功发送消息到节点 {} 并收到响应: {}", node_id, result.getMsg());
             return result;

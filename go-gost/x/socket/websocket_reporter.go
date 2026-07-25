@@ -558,18 +558,36 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		response.Type = "UnknownCommandResponse"
 	}
 
+	// Read-only commands must not serialize the full runtime configuration
+	// before replying. On nodes with large configs that can exceed the
+	// controller's response deadline and turn a successful probe into a
+	// timeout.
+	if commandChangesConfig(cmd.Type) {
+		saveConfig()
+	}
+
 	// 发送响应
 	if err != nil {
-		saveConfig()
 		response.Success = false
 		response.Message = err.Error()
 	} else {
-		saveConfig()
 		response.Success = true
 		response.Message = "OK"
 	}
 
 	w.sendResponse(response)
+}
+
+func commandChangesConfig(commandType string) bool {
+	switch commandType {
+	case "AddService", "UpdateService", "DeleteService", "PauseService", "ResumeService",
+		"AddChains", "UpdateChains", "DeleteChains",
+		"AddLimiters", "UpdateLimiters", "DeleteLimiters",
+		"SetProtocol":
+		return true
+	default:
+		return false
+	}
 }
 
 // Service 命令处理函数
