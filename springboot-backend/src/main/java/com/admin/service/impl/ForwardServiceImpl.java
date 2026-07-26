@@ -142,6 +142,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
     }
 
     @Override
+    @Transactional
+    public R retryForwardSync(Long id) {
+        UserInfo currentUser = getCurrentUserInfo();
+        Forward forward = this.getById(id);
+        if (forward == null
+                || (currentUser.getRoleId() != ADMIN_ROLE_ID
+                && !Objects.equals(currentUser.getUserId(), forward.getUserId()))) {
+            return R.err("转发不存在或无权操作");
+        }
+        if (!forwardSyncOutboxService.retryLatest(id)) {
+            return R.err("没有可重试的节点同步任务");
+        }
+        return R.ok("节点同步任务已重新排队");
+    }
+
+    @Override
     public R checkPortAvailability(ForwardPortCheckDto portCheckDto) {
         UserInfo currentUser = getCurrentUserInfo();
         Tunnel tunnel = validateTunnel(portCheckDto.getTunnelId());

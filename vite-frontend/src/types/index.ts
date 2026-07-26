@@ -9,7 +9,6 @@ export interface User {
   id: number;
   name?: string;
   user: string;
-  pwd?: string;
   status: number; // 1-正常, 0-禁用
   flow: number; // 流量限制(GB)
   num: number; // 转发数量

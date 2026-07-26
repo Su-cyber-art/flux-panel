@@ -4,6 +4,7 @@ import com.admin.entity.User;
 import com.admin.common.dto.UserPackageDto;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -16,7 +17,18 @@ import java.util.List;
  * @since 2025-06-03
  */
 public interface UserMapper extends BaseMapper<User> {
-    
+
+    @Update("""
+            UPDATE `user`
+            SET pwd = #{newPasswordHash}, updated_time = #{updatedTime}
+            WHERE id = #{userId} AND pwd = #{expectedPasswordHash}
+            """)
+    int upgradePasswordHash(
+            @Param("userId") Long userId,
+            @Param("expectedPasswordHash") String expectedPasswordHash,
+            @Param("newPasswordHash") String newPasswordHash,
+            @Param("updatedTime") Long updatedTime);
+
     /**
      * 查询用户隧道权限详情
      * @param userId 用户ID

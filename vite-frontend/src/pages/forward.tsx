@@ -43,6 +43,7 @@ import {
   pauseForwardService,
   resumeForwardService,
   diagnoseForward,
+  retryForwardSync,
   updateForwardOrder
 } from "@/api";
 import { JwtUtil } from "@/utils/jwt";
@@ -65,6 +66,14 @@ interface Forward {
   userName?: string;
   userId?: number;
   inx?: number;
+  syncStatus?: 'PENDING' | 'SYNCED' | 'FAILED';
+  syncError?: string;
+  syncTaskStatus?: 'PENDING' | 'PROCESSING' | 'FAILED';
+  syncOperation?: 'UPSERT' | 'DELETE';
+  deleteRequested?: boolean;
+  syncAttempts?: number;
+  syncNextAttemptAt?: number;
+  syncUpdatedTime?: number;
 }
 
 interface Tunnel {
@@ -86,6 +95,7 @@ interface ForwardForm {
 }
 
 type PortCheckStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'error';
+type SyncFilter = 'ALL' | 'PENDING' | 'SYNCED' | 'FAILED';
 
 interface PortCheckState {
   key: string | null;
@@ -132,6 +142,8 @@ export default function ForwardPage() {
   const [loading, setLoading] = useState(true);
   const [forwards, setForwards] = useState<Forward[]>([]);
   const [tunnels, setTunnels] = useState<Tunnel[]>([]);
+  const [syncFilter, setSyncFilter] = useState<SyncFilter>('ALL');
+  const [retryingForwardId, setRetryingForwardId] = useState<number | null>(null);
   
   // 检测是否为移动端
   const [isMobile, setIsMobile] = useState(false);
@@ -214,6 +226,7 @@ export default function ForwardPage() {
     message: ''
   });
   const portCheckRequestId = useRef(0);
+  const forwardListRequestId = useRef(0);
   const lastPortWarningKey = useRef<string | null>(null);
 
   const hasCustomPort = form.inPort !== null;
@@ -229,6 +242,13 @@ export default function ForwardPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (!forwards.some(forward => forward.syncTaskStatus)) return;
+
+    const timer = window.setTimeout(() => loadData(false, true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [forwards]);
 
   useEffect(() => {
     const requestId = ++portCheckRequestId.current;
@@ -363,14 +383,17 @@ export default function ForwardPage() {
   };
 
   // 加载所有数据
-  const loadData = async (lod = true) => {
+  const loadData = async (lod = true, forwardsOnly = false) => {
+    const requestId = ++forwardListRequestId.current;
     setLoading(lod);
     try {
       const [forwardsRes, tunnelsRes] = await Promise.all([
         getForwardList(),
-        userTunnel()
+        forwardsOnly ? Promise.resolve(null) : userTunnel()
       ]);
       
+      if (requestId !== forwardListRequestId.current) return;
+
       if (forwardsRes.code === 0) {
         const forwardsData = forwardsRes.data?.map((forward: any) => ({
           ...forward,
@@ -432,16 +455,18 @@ export default function ForwardPage() {
         toast.error(forwardsRes.msg || '获取转发列表失败');
       }
       
-      if (tunnelsRes.code === 0) {
+      if (tunnelsRes?.code === 0) {
         setTunnels(tunnelsRes.data || []);
-      } else {
+      } else if (tunnelsRes) {
         console.warn('获取隧道列表失败:', tunnelsRes.msg);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
       toast.error('加载数据失败');
     } finally {
-      setLoading(false);
+      if (requestId === forwardListRequestId.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -677,7 +702,7 @@ export default function ForwardPage() {
       }
       
       if (res.code === 0) {
-        toast.success(isEdit ? '修改成功' : '创建成功');
+        toast.success(isEdit ? '修改已保存，正在下发到节点' : '转发已保存，正在下发到节点');
         setModalOpen(false);
         loadData();
       } else {
@@ -714,6 +739,11 @@ export default function ForwardPage() {
       return;
     }
 
+    if (forward.deleteRequested) {
+      toast.error('转发正在删除，无法修改服务状态');
+      return;
+    }
+
     const targetState = !forward.serviceRunning;
     
     try {
@@ -732,11 +762,16 @@ export default function ForwardPage() {
       }
       
       if (res.code === 0) {
-        toast.success(targetState ? '服务已启动' : '服务已暂停');
-        // 更新转发状态
-        setForwards(prev => prev.map(f => 
-          f.id === forward.id 
-            ? { ...f, status: targetState ? 1 : 0 }
+        toast.success(targetState ? '恢复请求已保存，正在同步节点' : '暂停请求已保存，正在同步节点');
+        setForwards(prev => prev.map(f =>
+          f.id === forward.id
+            ? {
+                ...f,
+                status: targetState ? 1 : 0,
+                syncStatus: 'PENDING',
+                syncError: undefined,
+                syncTaskStatus: 'PENDING'
+              }
             : f
         ));
       } else {
@@ -1126,6 +1161,44 @@ export default function ForwardPage() {
     }
   };
 
+  const handleRetrySync = async (forward: Forward) => {
+    setRetryingForwardId(forward.id);
+    try {
+      const response = await retryForwardSync(forward.id);
+      if (response.code === 0) {
+        toast.success('节点同步任务已重新排队');
+        await loadData(false, true);
+      } else {
+        toast.error(response.msg || '重试节点同步失败');
+      }
+    } catch (error) {
+      console.error('重试节点同步失败:', error);
+      toast.error('重试节点同步失败');
+    } finally {
+      setRetryingForwardId(null);
+    }
+  };
+
+  const getSyncDisplay = (forward: Forward) => {
+    const action = forward.syncOperation === 'DELETE' ? '删除节点配置' : '下发节点配置';
+    switch (forward.syncTaskStatus) {
+      case 'PROCESSING':
+        return { color: 'warning', text: '正在同步', description: `正在${action}` };
+      case 'PENDING':
+        return { color: 'warning', text: '等待同步', description: `已保存，等待${action}` };
+      case 'FAILED':
+        return {
+          color: 'danger',
+          text: '同步失败',
+          description: forward.syncError || `${action}失败`
+        };
+      default:
+        return forward.syncStatus === 'SYNCED'
+          ? { color: 'success', text: '已同步', description: '节点配置已生效' }
+          : { color: 'warning', text: '等待同步', description: `已保存，等待${action}` };
+    }
+  };
+
   // 获取状态显示
   const getStatusDisplay = (status: number) => {
     switch (status) {
@@ -1135,6 +1208,8 @@ export default function ForwardPage() {
         return { color: 'warning', text: '暂停' };
       case -1:
         return { color: 'danger', text: '异常' };
+      case -2:
+        return { color: 'warning', text: '删除中' };
       default:
         return { color: 'default', text: '未知' };
     }
@@ -1149,6 +1224,8 @@ export default function ForwardPage() {
         return { color: 'success', text: '轮询' };
       case 'rand':
         return { color: 'warning', text: '随机' };
+      case 'hash':
+        return { color: 'secondary', text: '哈希' };
       default:
         return { color: 'default', text: '未知' };
     }
@@ -1232,12 +1309,22 @@ export default function ForwardPage() {
       return [];
     }
     
-    // 在平铺模式下，只显示当前用户的转发
     let filteredForwards = forwards;
+    if (syncFilter === 'PENDING') {
+      filteredForwards = forwards.filter(forward =>
+        forward.syncTaskStatus === 'PENDING' || forward.syncTaskStatus === 'PROCESSING');
+    } else if (syncFilter === 'FAILED') {
+      filteredForwards = forwards.filter(forward => forward.syncTaskStatus === 'FAILED');
+    } else if (syncFilter === 'SYNCED') {
+      filteredForwards = forwards.filter(forward =>
+        !forward.syncTaskStatus && forward.syncStatus === 'SYNCED');
+    }
+
+    // 在平铺模式下，只显示当前用户的转发
     if (viewMode === 'direct') {
       const currentUserId = JwtUtil.getUserIdFromToken();
       if (currentUserId !== null) {
-        filteredForwards = forwards.filter(forward => forward.userId === currentUserId);
+        filteredForwards = filteredForwards.filter(forward => forward.userId === currentUserId);
       }
     }
     
@@ -1310,6 +1397,7 @@ export default function ForwardPage() {
   // 渲染转发卡片
   const renderForwardCard = (forward: Forward, listeners?: any) => {
     const statusDisplay = getStatusDisplay(forward.status);
+    const syncDisplay = getSyncDisplay(forward);
     const strategyDisplay = getStrategyDisplay(forward.strategy);
     
     return (
@@ -1341,16 +1429,26 @@ export default function ForwardPage() {
                 size="sm"
                 isSelected={forward.serviceRunning}
                 onValueChange={() => handleServiceToggle(forward)}
-                isDisabled={forward.status !== 1 && forward.status !== 0}
+                isDisabled={forward.deleteRequested || (forward.status !== 1 && forward.status !== 0)}
               />
-              <Chip 
-                color={statusDisplay.color as any} 
-                variant="flat" 
-                size="sm"
-                className="text-xs"
-              >
-                {statusDisplay.text}
-              </Chip>
+              <div className="flex flex-col items-end gap-1">
+                <Chip
+                  color={statusDisplay.color as any}
+                  variant="flat"
+                  size="sm"
+                  className="text-xs"
+                >
+                  {statusDisplay.text}
+                </Chip>
+                <Chip
+                  color={syncDisplay.color as any}
+                  variant="dot"
+                  size="sm"
+                  className="text-xs"
+                >
+                  {syncDisplay.text}
+                </Chip>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -1404,6 +1502,38 @@ export default function ForwardPage() {
               </div>
             </div>
 
+            {(forward.syncTaskStatus || forward.syncStatus !== 'SYNCED') && (
+              <Alert
+                color={forward.syncTaskStatus === 'FAILED' ? 'danger' : 'warning'}
+                variant="flat"
+                title={syncDisplay.text}
+                description={
+                  <div className="space-y-1">
+                    <p className="break-words">{syncDisplay.description}</p>
+                    {forward.syncAttempts !== undefined && forward.syncAttempts > 0 && (
+                      <p className="text-xs">已尝试 {forward.syncAttempts} 次</p>
+                    )}
+                    {forward.syncTaskStatus === 'FAILED' && forward.syncNextAttemptAt && (
+                      <p className="text-xs">
+                        下次自动重试：{new Date(forward.syncNextAttemptAt).toLocaleString('zh-CN')}
+                      </p>
+                    )}
+                  </div>
+                }
+                endContent={forward.syncTaskStatus === 'FAILED' ? (
+                  <Button
+                    size="sm"
+                    color="danger"
+                    variant="flat"
+                    onPress={() => handleRetrySync(forward)}
+                    isLoading={retryingForwardId === forward.id}
+                  >
+                    立即重试
+                  </Button>
+                ) : undefined}
+              />
+            )}
+
             {/* 统计信息 */}
             <div className="flex items-center justify-between pt-2 border-t border-divider">
               <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
@@ -1427,6 +1557,7 @@ export default function ForwardPage() {
               variant="flat"
               color="primary"
               onPress={() => handleEdit(forward)}
+              isDisabled={forward.deleteRequested}
               className="flex-1 min-h-8"
               startContent={
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1441,6 +1572,7 @@ export default function ForwardPage() {
               variant="flat"
               color="warning"
               onPress={() => handleDiagnose(forward)}
+              isDisabled={forward.deleteRequested}
               className="flex-1 min-h-8"
               startContent={
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1455,6 +1587,7 @@ export default function ForwardPage() {
               variant="flat"
               color="danger"
               onPress={() => handleDelete(forward)}
+              isDisabled={forward.deleteRequested}
               className="flex-1 min-h-8"
               startContent={
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1490,10 +1623,27 @@ export default function ForwardPage() {
     
       <div className="px-3 lg:px-6 py-8">
         {/* 页面头部 */}
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex-1">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-default-500">节点同步</span>
+            {([
+              ['ALL', '全部'],
+              ['PENDING', `同步中 ${forwards.filter(forward => forward.syncTaskStatus === 'PENDING' || forward.syncTaskStatus === 'PROCESSING').length}`],
+              ['FAILED', `失败 ${forwards.filter(forward => forward.syncTaskStatus === 'FAILED').length}`],
+              ['SYNCED', '已同步']
+            ] as Array<[SyncFilter, string]>).map(([value, label]) => (
+              <Button
+                key={value}
+                size="sm"
+                variant={syncFilter === value ? 'solid' : 'flat'}
+                color={value === 'FAILED' ? 'danger' : value === 'PENDING' ? 'warning' : 'default'}
+                onPress={() => setSyncFilter(value)}
+              >
+                {label}
+              </Button>
+            ))}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* 显示模式切换按钮 */}
             <Button
               size="sm"
@@ -1638,7 +1788,7 @@ export default function ForwardPage() {
           )
         ) : (
           /* 直接显示模式 */
-          forwards.length > 0 ? (
+          getSortedForwards().length > 0 ? (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}

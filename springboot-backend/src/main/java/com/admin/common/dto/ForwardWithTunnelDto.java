@@ -43,7 +43,19 @@ public class ForwardWithTunnelDto {
     private String syncStatus;
 
     private String syncError;
-    
+
+    private String syncTaskStatus;
+
+    private Integer syncAttempts;
+
+    private Long syncNextAttemptAt;
+
+    private Long syncUpdatedTime;
+
+    private String syncOperation;
+
+    private Boolean deleteRequested;
+
     /**
      * 创建时间
      */

@@ -78,7 +78,12 @@ public class ForwardSyncOutboxService {
 
     @Transactional
     public void complete(SyncTask task) {
-        jdbcTemplate.update("DELETE FROM forward_sync_outbox WHERE id = ?", task.id);
+        int completed = jdbcTemplate.update(
+                "DELETE FROM forward_sync_outbox WHERE id = ? AND status = 'PROCESSING'",
+                task.id);
+        if (completed != 1) {
+            return;
+        }
         if (OPERATION_UPSERT.equals(task.operation)) {
             jdbcTemplate.update("""
                     UPDATE `forward`
@@ -99,17 +104,52 @@ public class ForwardSyncOutboxService {
         long delay = Math.min(300_000L, 2_000L << Math.min(attempts - 1, 16));
         long now = System.currentTimeMillis();
         String message = truncate(error, 2000);
-        jdbcTemplate.update("""
+        int failed = jdbcTemplate.update("""
                 UPDATE forward_sync_outbox
                 SET status = 'FAILED', attempts = ?, next_attempt_at = ?,
                     locked_at = NULL, last_error = ?, updated_time = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'PROCESSING'
                 """, attempts, now + delay, message, now, task.id);
+        if (failed != 1) {
+            return;
+        }
         jdbcTemplate.update("""
                 UPDATE `forward`
                 SET sync_status = 'FAILED', sync_error = ?, updated_time = ?
                 WHERE id = ?
-                """, message, now, task.forwardId);
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM forward_sync_outbox newer
+                      WHERE newer.forward_id = ? AND newer.id > ?
+                  )
+                """, message, now, task.forwardId, task.forwardId, task.id);
+    }
+
+    @Transactional
+    public boolean retryLatest(Long forwardId) {
+        long now = System.currentTimeMillis();
+        int updated = jdbcTemplate.update("""
+                UPDATE forward_sync_outbox
+                SET status = 'PENDING', next_attempt_at = ?, locked_at = NULL,
+                    last_error = NULL, updated_time = ?
+                WHERE status = 'FAILED'
+                  AND id = (
+                    SELECT task_id
+                    FROM (
+                        SELECT MAX(id) AS task_id
+                        FROM forward_sync_outbox
+                        WHERE forward_id = ?
+                    ) latest
+                )
+                """, now, now, forwardId);
+        if (updated == 1) {
+            jdbcTemplate.update("""
+                    UPDATE `forward`
+                    SET sync_status = 'PENDING', sync_error = NULL, updated_time = ?
+                    WHERE id = ?
+                    """, now, forwardId);
+        }
+        return updated == 1;
     }
 
     public void removeByForwardId(Long forwardId) {

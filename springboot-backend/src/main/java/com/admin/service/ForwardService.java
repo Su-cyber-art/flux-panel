@@ -32,6 +32,11 @@ public interface ForwardService extends IService<Forward> {
     R getAllForwards();
 
     /**
+     * 立即重新排队最新的节点同步任务。
+     */
+    R retryForwardSync(Long id);
+
+    /**
      * 更新端口转发
      * @param forwardUpdateDto 更新数据
      * @return 结果

@@ -1,7 +1,6 @@
 package com.admin.controller;
 
 import com.admin.common.aop.LogAnnotation;
-import com.admin.common.annotation.RequireRole;
 import com.admin.common.dto.ForwardDto;
 import com.admin.common.dto.ForwardPortCheckDto;
 import com.admin.common.dto.ForwardUpdateDto;
@@ -45,6 +44,13 @@ public class ForwardController extends BaseController {
     @PostMapping("/update")
     public R update(@Validated @RequestBody ForwardUpdateDto forwardUpdateDto) {
         return forwardService.updateForward(forwardUpdateDto);
+    }
+
+    @LogAnnotation
+    @PostMapping("/sync/retry")
+    public R retrySync(@RequestBody Map<String, Object> params) {
+        Long id = Long.valueOf(params.get("id").toString());
+        return forwardService.retryForwardSync(id);
     }
 
     @PostMapping("/check-port")

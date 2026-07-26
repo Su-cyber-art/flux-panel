@@ -218,8 +218,10 @@ public class FlowAccountingService {
 
     private void applyDelta(
             FlowTarget target, long rawUp, long rawDown, AccountingResult result) {
-        long billedUp = bill(rawUp, target.tunnel);
-        long billedDown = bill(rawDown, target.tunnel);
+        long billedUp = isBidirectional(target.tunnel)
+                ? applyTrafficRatio(rawUp, target.tunnel)
+                : 0;
+        long billedDown = applyTrafficRatio(rawDown, target.tunnel);
         if (billedUp == 0 && billedDown == 0) {
             return;
         }
@@ -255,20 +257,21 @@ public class FlowAccountingService {
         }
     }
 
-    private static long bill(long value, Tunnel tunnel) {
+    private static long applyTrafficRatio(long value, Tunnel tunnel) {
         if (value == 0) {
             return 0;
         }
         BigDecimal ratio = tunnel.getTrafficRatio() == null
                 ? BigDecimal.ONE : tunnel.getTrafficRatio();
-        int flowType = tunnel.getFlow() <= 0 ? 2 : tunnel.getFlow();
-        BigDecimal billed = BigDecimal.valueOf(value)
-                .multiply(ratio)
-                .multiply(BigDecimal.valueOf(flowType));
+        BigDecimal billed = BigDecimal.valueOf(value).multiply(ratio);
         if (billed.compareTo(BigDecimal.valueOf(Long.MAX_VALUE)) >= 0) {
             return Long.MAX_VALUE;
         }
         return billed.longValue();
+    }
+
+    private static boolean isBidirectional(Tunnel tunnel) {
+        return tunnel.getFlow() != 1;
     }
 
     static long absoluteDelta(long previous, long current) {

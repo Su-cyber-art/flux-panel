@@ -29,6 +29,7 @@ class FlowAccountingServiceIntegrationTest {
     private TransactionTemplate transactionTemplate;
     private FlowAccountingService accountingService;
     private Node node;
+    private Tunnel tunnel;
 
     @BeforeEach
     void setUp() {
@@ -56,7 +57,7 @@ class FlowAccountingServiceIntegrationTest {
         forward.setUserId(7);
         forward.setTunnelId(11);
 
-        Tunnel tunnel = new Tunnel();
+        tunnel = new Tunnel();
         tunnel.setId(11L);
         tunnel.setInNodeId(9L);
         tunnel.setTrafficRatio(BigDecimal.ONE);
@@ -87,12 +88,35 @@ class FlowAccountingServiceIntegrationTest {
         assertTrue(duplicate.isDuplicate());
         assertFalse(second.isDuplicate());
         assertFalse(recreatedService.isDuplicate());
-        assertFlow("forward", "id", 101, 560L, 300L);
-        assertFlow("user", "id", 7, 560L, 300L);
-        assertFlow("user_tunnel", "id", 501, 560L, 300L);
+        assertFlow("forward", "id", 101, 280L, 150L);
+        assertFlow("user", "id", 7, 280L, 150L);
+        assertFlow("user_tunnel", "id", 501, 280L, 150L);
         assertEquals(3L, jdbcTemplate.queryForObject(
                 "SELECT last_sequence FROM flow_report_stream WHERE node_id = 9",
                 Long.class));
+    }
+
+    @Test
+    void singleDirectionBillsOnlyUploadWithTrafficRatio() {
+        tunnel.setFlow(1);
+        tunnel.setTrafficRatio(new BigDecimal("1.5"));
+
+        account(batch(1L, 100L, 100L, 200L));
+
+        assertFlow("forward", "id", 101, 300L, 0L);
+        assertFlow("user", "id", 7, 300L, 0L);
+        assertFlow("user_tunnel", "id", 501, 300L, 0L);
+    }
+
+    @Test
+    void bidirectionalBillsEachDirectionOnceWithTrafficRatio() {
+        tunnel.setTrafficRatio(new BigDecimal("1.5"));
+
+        account(batch(1L, 100L, 100L, 200L));
+
+        assertFlow("forward", "id", 101, 300L, 150L);
+        assertFlow("user", "id", 7, 300L, 150L);
+        assertFlow("user_tunnel", "id", 501, 300L, 150L);
     }
 
     @Test

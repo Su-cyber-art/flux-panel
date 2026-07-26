@@ -15,6 +15,12 @@
             f.status,
             f.sync_status AS syncStatus,
             f.sync_error AS syncError,
+            f.delete_requested AS deleteRequested,
+            sync_task.status AS syncTaskStatus,
+            sync_task.operation AS syncOperation,
+            COALESCE(sync_task.attempts, 0) AS syncAttempts,
+            sync_task.next_attempt_at AS syncNextAttemptAt,
+            sync_task.updated_time AS syncUpdatedTime,
             f.created_time AS createdTime,
             f.updated_time AS updatedTime,
             f.user_name AS userName,
@@ -32,8 +38,14 @@
             forward f
         LEFT JOIN
             tunnel t ON f.tunnel_id = t.id
+        LEFT JOIN forward_sync_outbox sync_task
+            ON sync_task.id = (
+                SELECT MAX(latest_sync.id)
+                FROM forward_sync_outbox latest_sync
+                WHERE latest_sync.forward_id = f.id
+            )
         WHERE
-            f.delete_requested = 0
+            (f.delete_requested = 0 OR sync_task.id IS NOT NULL)
         ORDER BY
             f.created_time DESC
     </select>
@@ -51,6 +63,12 @@
             f.status,
             f.sync_status AS syncStatus,
             f.sync_error AS syncError,
+            f.delete_requested AS deleteRequested,
+            sync_task.status AS syncTaskStatus,
+            sync_task.operation AS syncOperation,
+            COALESCE(sync_task.attempts, 0) AS syncAttempts,
+            sync_task.next_attempt_at AS syncNextAttemptAt,
+            sync_task.updated_time AS syncUpdatedTime,
             f.created_time AS createdTime,
             f.updated_time AS updatedTime,
             f.user_name AS userName,
@@ -66,11 +84,17 @@
             t.protocol
         FROM 
             forward f
-        LEFT JOIN 
+        LEFT JOIN
             tunnel t ON f.tunnel_id = t.id
+        LEFT JOIN forward_sync_outbox sync_task
+            ON sync_task.id = (
+                SELECT MAX(latest_sync.id)
+                FROM forward_sync_outbox latest_sync
+                WHERE latest_sync.forward_id = f.id
+            )
         WHERE
             f.user_id = #{userId}
-            AND f.delete_requested = 0
+            AND (f.delete_requested = 0 OR sync_task.id IS NOT NULL)
         ORDER BY 
             f.created_time DESC
     </select>

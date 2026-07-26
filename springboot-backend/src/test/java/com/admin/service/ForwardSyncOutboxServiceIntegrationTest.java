@@ -93,4 +93,35 @@ class ForwardSyncOutboxServiceIntegrationTest {
         assertEquals("FAILED", jdbcTemplate.queryForObject(
                 "SELECT sync_status FROM `forward` WHERE id = 1", String.class));
     }
+
+    @Test
+    void olderTaskFailureDoesNotOverrideNewerPendingState() {
+        outboxService.enqueueUpsert(1L, null, null);
+        SyncTask older = outboxService.findDueTasks(10).get(0);
+        assertTrue(outboxService.claim(older.getId()));
+        outboxService.enqueueUpsert(1L, null, null);
+
+        outboxService.fail(older, "stale failure");
+
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT sync_status FROM `forward` WHERE id = 1", String.class));
+    }
+
+    @Test
+    void retriesLatestTaskImmediatelyAndClearsDisplayedError() {
+        outboxService.enqueueUpsert(1L, null, null);
+        SyncTask task = outboxService.findDueTasks(10).get(0);
+        assertTrue(outboxService.claim(task.getId()));
+        outboxService.fail(task, "node unavailable");
+
+        assertTrue(outboxService.retryLatest(1L));
+
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT status FROM forward_sync_outbox WHERE id = ?",
+                String.class,
+                task.getId()));
+        assertEquals("PENDING", jdbcTemplate.queryForObject(
+                "SELECT sync_status FROM `forward` WHERE id = 1", String.class));
+        assertEquals(1, outboxService.findDueTasks(10).size());
+    }
 }

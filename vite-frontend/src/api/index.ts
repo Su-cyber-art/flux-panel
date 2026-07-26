@@ -61,6 +61,7 @@ export interface ForwardPortAvailability {
 export const createForward = (data: any) => Network.post("/forward/create", data);
 export const getForwardList = () => Network.post("/forward/list");
 export const updateForward = (data: any) => Network.post("/forward/update", data);
+export const retryForwardSync = (id: number) => Network.post("/forward/sync/retry", { id });
 export const checkForwardPort = (data: {
   tunnelId: number;
   inPort: number;

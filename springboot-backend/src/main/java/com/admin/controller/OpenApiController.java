@@ -5,14 +5,12 @@ import com.admin.common.aop.LogAnnotation;
 import com.admin.common.lang.R;
 import jakarta.servlet.http.HttpServletResponse;
 
-import com.admin.common.utils.Md5Util;
+import com.admin.common.utils.PasswordUtil;
 import com.admin.entity.User;
 import com.admin.entity.UserTunnel;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Objects;
 
 @RestController
 @CrossOrigin
@@ -44,8 +42,7 @@ public class OpenApiController extends BaseController {
             return R.err("鉴权失败");
         }
 
-        String pwdMd5 = Md5Util.md5(pwd);
-        if (!Objects.equals(pwdMd5, userInfo.getPwd())) {
+        if (!PasswordUtil.matches(pwd, userInfo.getPwd())) {
             return R.err("鉴权失败");
         }
 
