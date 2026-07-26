@@ -1,0 +1,185 @@
+/* ===========================================================
+   flux-panel · 全局设计系统
+   基于 Naive UI，补充品牌化的 CSS 变量、动效与响应式细节
+   =========================================================== */
+
+:root {
+  /* 品牌色 */
+  --brand-500: #2563eb;
+  --brand-600: #1d4ed8;
+  --brand-400: #3b82f6;
+
+  /* 语义色 */
+  --ok: #18a058;
+  --warn: #f0a020;
+  --danger: #e04141;
+
+  /* 浅色主题 */
+  --bg-body: #f4f6fb;
+  --bg-elevated: #ffffff;
+  --bg-subtle: #f2f4f8;
+  --border-soft: rgba(15, 23, 42, 0.08);
+  --text-primary: #1f2733;
+  --text-secondary: #64748b;
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.06);
+  --shadow-hover: 0 6px 16px rgba(37, 99, 235, 0.14), 0 12px 40px rgba(15, 23, 42, 0.1);
+
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+html.dark {
+  --bg-body: #0b1120;
+  --bg-elevated: #131a2a;
+  --bg-subtle: #1b2436;
+  --border-soft: rgba(148, 163, 184, 0.14);
+  --text-primary: #e6ebf5;
+  --text-secondary: #94a3b8;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-hover: 0 8px 22px rgba(37, 99, 235, 0.28), 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow-x: hidden;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-body);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+@supports (min-height: 100dvh) {
+  #app {
+    min-height: 100dvh;
+  }
+}
+
+@media (max-width: 768px) {
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+  body {
+    overscroll-behavior-y: none;
+  }
+}
+
+.safe-top {
+  padding-top: var(--safe-area-top);
+}
+.safe-bottom {
+  padding-bottom: var(--safe-area-bottom);
+}
+
+/* 自定义滚动条，营造更精致的观感 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- 通用工具类 ---------- */
+.fx-page {
+  padding: 20px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+@media (max-width: 768px) {
+  .fx-page {
+    padding: 14px;
+  }
+}
+
+.fx-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.fx-mono {
+  font-family: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+/* 卡片进入动画 + 悬浮微交互，让页面更"丝滑" */
+.fx-card {
+  border-radius: var(--radius-lg);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease;
+  will-change: transform;
+}
+.fx-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-hover);
+}
+
+@keyframes fx-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fx-fade-up {
+  animation: fx-fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* 路由过渡 */
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+.fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* 验证码弹层 */
+.captcha-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.captcha-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(4px);
+  animation: fx-fade-up 0.25s ease both;
+}

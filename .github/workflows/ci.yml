@@ -25,18 +25,22 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: vite-frontend/package-lock.json
+          cache-dependency-path: vue-frontend/package-lock.json
 
       - name: Install dependencies
-        working-directory: vite-frontend
+        working-directory: vue-frontend
         run: npm ci
 
       - name: Audit production dependencies
-        working-directory: vite-frontend
+        working-directory: vue-frontend
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Type check
+        working-directory: vue-frontend
+        run: npm run type-check
+
       - name: Build
-        working-directory: vite-frontend
+        working-directory: vue-frontend
         env:
           VITE_APP_VERSION: ci
         run: npm run build

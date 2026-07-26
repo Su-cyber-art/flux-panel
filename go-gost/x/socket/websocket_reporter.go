@@ -80,6 +80,11 @@ type TcpPingResponse struct {
 	Port         int     `json:"port"`
 	Success      bool    `json:"success"`
 	AverageTime  float64 `json:"averageTime"` // 平均连接时间(ms)
+	MinTime      float64 `json:"minTime"`     // 最小连接时间(ms)
+	MaxTime      float64 `json:"maxTime"`     // 最大连接时间(ms)
+	Jitter       float64 `json:"jitter"`      // 抖动(ms)
+	Attempts     int     `json:"attempts"`    // 探测次数
+	SuccessCount int     `json:"successCount"` // 成功次数
 	PacketLoss   float64 `json:"packetLoss"`  // 连接失败率(%)
 	ErrorMessage string  `json:"errorMessage,omitempty"`
 	RequestId    string  `json:"requestId,omitempty"`
@@ -547,6 +552,26 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 		tcpPingResult, err = w.handleTcpPing(cmd.Data)
 		response.Type = "TcpPingResponse"
 		response.Data = tcpPingResult
+
+	// 端到端数据回环诊断命令
+	case "EchoServer":
+		var echoResult EchoServerResponse
+		echoResult, err = w.handleEchoServer(cmd.Data)
+		response.Type = "EchoServerResponse"
+		response.Data = echoResult
+	case "EchoRelay":
+		var relayResult EchoRelayResponse
+		relayResult, err = w.handleEchoRelay(cmd.Data)
+		response.Type = "EchoRelayResponse"
+		response.Data = relayResult
+	case "EchoProbe":
+		var probeResult EchoProbeResponse
+		probeResult, err = w.handleEchoProbe(cmd.Data)
+		response.Type = "EchoProbeResponse"
+		response.Data = probeResult
+	case "StopDiag":
+		err = w.handleStopDiag(cmd.Data)
+		response.Type = "StopDiagResponse"
 
 	// Protocol blocking switches
 	case "SetProtocol":
@@ -1116,99 +1141,31 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 		req.Timeout = 5000 // 默认5秒超时
 	}
 
-	// 执行TCP ping操作
-	avgTime, packetLoss, err := tcpPingHost(req.IP, req.Port, req.Count, req.Timeout)
+	// 执行真实 TCP 建连探测，收集 min/avg/max/jitter/丢包 等指标
+	stat := tcpPingCollect(req.IP, req.Port, req.Count, req.Timeout)
 
 	response := TcpPingResponse{
-		IP:        req.IP,
-		Port:      req.Port,
-		RequestId: req.RequestId,
+		IP:           req.IP,
+		Port:         req.Port,
+		RequestId:    req.RequestId,
+		Attempts:     stat.attempts,
+		SuccessCount: stat.success,
 	}
 
-	if err != nil {
+	if stat.err != nil {
 		response.Success = false
-		response.ErrorMessage = err.Error()
+		response.PacketLoss = 100
+		response.ErrorMessage = stat.err.Error()
 	} else {
 		response.Success = true
-		response.AverageTime = avgTime
-		response.PacketLoss = packetLoss
+		response.AverageTime = stat.avg
+		response.MinTime = stat.min
+		response.MaxTime = stat.max
+		response.Jitter = stat.jitter
+		response.PacketLoss = stat.loss
 	}
 
 	return response, nil
-}
-
-// tcpPingHost 执行TCP连接测试，返回平均连接时间和失败率
-func tcpPingHost(ip string, port int, count int, timeoutMs int) (float64, float64, error) {
-	var totalTime float64
-	var successCount int
-
-	timeout := time.Duration(timeoutMs) * time.Millisecond
-
-	// 使用net.JoinHostPort来正确处理IPv4、IPv6和域名
-	// 它会自动为IPv6地址添加方括号
-	target := net.JoinHostPort(ip, fmt.Sprintf("%d", port))
-
-	fmt.Printf("🔍 开始TCP ping测试: %s，次数: %d，超时: %dms\n", target, count, timeoutMs)
-
-	// 如果是域名，先解析一次DNS，避免每次连接都重新解析导致延迟累加
-	if net.ParseIP(ip) == nil {
-		// 是域名，需要解析
-		fmt.Printf("🔍 检测到域名，正在解析DNS...\n")
-		dnsStart := time.Now()
-
-		addrs, err := net.LookupHost(ip)
-		dnsDuration := time.Since(dnsStart)
-
-		if err != nil {
-			return 0, 100.0, fmt.Errorf("DNS解析失败: %v", err)
-		}
-		if len(addrs) == 0 {
-			return 0, 100.0, fmt.Errorf("DNS解析未返回任何IP地址")
-		}
-
-		fmt.Printf("✅ DNS解析完成 (%.2fms)，解析到 %d 个IP: %v\n",
-			dnsDuration.Seconds()*1000, len(addrs), addrs)
-
-		// 使用第一个解析到的IP进行测试
-		target = net.JoinHostPort(addrs[0], fmt.Sprintf("%d", port))
-		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
-	} else {
-		fmt.Printf("🎯 使用IP地址进行测试: %s\n", target)
-	}
-
-	for i := 0; i < count; i++ {
-		start := time.Now()
-
-		// 创建带超时的TCP连接
-		conn, err := net.DialTimeout("tcp", target, timeout)
-
-		elapsed := time.Since(start)
-
-		if err != nil {
-			fmt.Printf("  第%d次连接失败: %v (%.2fms)\n", i+1, err, elapsed.Seconds()*1000)
-		} else {
-			fmt.Printf("  第%d次连接成功: %.2fms\n", i+1, elapsed.Seconds()*1000)
-			conn.Close()
-			totalTime += elapsed.Seconds() * 1000 // 转换为毫秒
-			successCount++
-		}
-
-		// 如果不是最后一次，等待一下再进行下次测试
-		if i < count-1 {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	if successCount == 0 {
-		return 0, 100.0, fmt.Errorf("所有TCP连接尝试都失败")
-	}
-
-	avgTime := totalTime / float64(successCount)
-	packetLoss := float64(count-successCount) / float64(count) * 100
-
-	fmt.Printf("✅ TCP ping完成: 平均连接时间 %.2fms，失败率 %.1f%%\n", avgTime, packetLoss)
-
-	return avgTime, packetLoss, nil
 }
 
 // isValidHostname 验证主机名格式

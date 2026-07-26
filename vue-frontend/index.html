@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="viewport-fit=cover, width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="description" content="flux-panel" />
+    <meta property="og:title" content="flux-panel" />
+    <meta property="og:description" content="flux-panel" />
+    <title>flux-panel</title>
+    <script>
+      // 预绘制脚本：在首帧前确定明暗主题与 H5 模式，避免闪烁
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme-mode'); // 'light' | 'dark' | 'auto' | null
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var isDark = stored === 'dark' || ((stored === 'auto' || !stored) && prefersDark);
+          var root = document.documentElement;
+          if (isDark) root.classList.add('dark'); else root.classList.remove('dark');
+          root.style.colorScheme = isDark ? 'dark' : 'light';
+
+          window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
+            var mode = localStorage.getItem('theme-mode');
+            if (mode && mode !== 'auto') return;
+            document.documentElement.classList.toggle('dark', e.matches);
+            document.documentElement.style.colorScheme = e.matches ? 'dark' : 'light';
+          });
+
+          var isMobile = window.innerWidth <= 768;
+          var ua = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          var h5 = new URLSearchParams(location.search).get('h5') === 'true';
+          document.documentElement.classList.add((isMobile || ua || h5) ? 'h5-mode' : 'pc-mode');
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

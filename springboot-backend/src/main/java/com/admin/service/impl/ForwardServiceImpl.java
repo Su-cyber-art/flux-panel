@@ -6,9 +6,11 @@ import com.admin.common.dto.ForwardPortCheckDto;
 import com.admin.common.dto.ForwardUpdateDto;
 import com.admin.common.dto.ForwardWithTunnelDto;
 import com.admin.common.dto.GostDto;
+import com.admin.common.dto.DiagnosisResultDto;
 import com.admin.common.lang.R;
 import com.admin.common.utils.GostUtil;
 import com.admin.common.utils.JwtUtil;
+import com.admin.common.utils.NodeDiagnostics;
 import com.admin.common.utils.WebSocketServer;
 import com.admin.entity.*;
 import com.admin.mapper.ForwardMapper;
@@ -526,21 +528,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
 
-        List<DiagnosisResult> results = new ArrayList<>();
+        List<DiagnosisResultDto> results = new ArrayList<>();
         String[] remoteAddresses = forward.getRemoteAddr().split(",");
         // 6. 根据隧道类型执行不同的诊断策略
         if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
-            // 端口转发：入口节点直接TCP ping目标地址
+            // 端口转发：先验证入口服务是否真的在监听，再由入口节点真实建连目标地址
+            if (forward.getInPort() != null) {
+                results.add(NodeDiagnostics.tcpProbe(inNode, "127.0.0.1", forward.getInPort(),
+                        "入口监听端口(" + forward.getInPort() + ")", "LISTENER"));
+            }
             for (String remoteAddress : remoteAddresses) {
-                // 提取IP和端口
                 String targetIp = extractIpFromAddress(remoteAddress);
                 int targetPort = extractPortFromAddress(remoteAddress);
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-
-                DiagnosisResult result = performTcpPingDiagnosis(inNode, targetIp, targetPort, "转发->目标");
-                results.add(result);
+                results.add(NodeDiagnostics.tcpProbe(inNode, targetIp, targetPort, "入口->目标", "TARGET"));
             }
         } else {
             NodeInfo nodeInfo = getRequiredNodes(tunnel);
@@ -551,6 +554,13 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
             List<Node> pathNodes = new ArrayList<>();
             pathNodes.add(inNode);
             pathNodes.addAll(nodeInfo.getRelayNodes());
+
+            // 入口监听探测
+            if (forward.getInPort() != null) {
+                results.add(NodeDiagnostics.tcpProbe(inNode, "127.0.0.1", forward.getInPort(),
+                        "入口监听端口(" + forward.getInPort() + ")", "LISTENER"));
+            }
+            // 逐跳真实建连 + 延迟
             for (int i = 0; i < pathNodes.size() - 1; i++) {
                 Node source = pathNodes.get(i);
                 Node target = pathNodes.get(i + 1);
@@ -558,10 +568,11 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetPort == null) {
                     return R.err("节点 " + target.getName() + " 缺少中转端口");
                 }
-                results.add(performTcpPingDiagnosis(source, target.getServerIp(), targetPort,
-                        source.getName() + "->" + target.getName()));
+                results.add(NodeDiagnostics.tcpProbe(source, target.getServerIp(), targetPort,
+                        source.getName() + "->" + target.getName(), "HOP"));
             }
 
+            // 出口 -> 目标 真实建连
             Node outNode = nodeInfo.getOutNode();
             for (String remoteAddress : remoteAddresses) {
                 String targetIp = extractIpFromAddress(remoteAddress);
@@ -569,10 +580,12 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-                DiagnosisResult outToTargetResult = performTcpPingDiagnosis(outNode, targetIp, targetPort, "出口->目标");
-                results.add(outToTargetResult);
+                results.add(NodeDiagnostics.tcpProbe(outNode, targetIp, targetPort, "出口->目标", "TARGET"));
             }
 
+            // 端到端真实数据回环（贯穿整条链路，字节级完整性校验）
+            String pathDesc = pathNodes.stream().map(Node::getName).collect(Collectors.joining("->"));
+            results.add(NodeDiagnostics.chainLoopback(inNode, nodeInfo.getRelayNodes(), pathDesc));
         }
 
         // 7. 构建诊断报告
@@ -582,9 +595,25 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         diagnosisReport.put("tunnelType", tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD ? "端口转发" : "隧道转发");
         diagnosisReport.put("pathNodeIds", tunnelService.getPathNodeIds(tunnel));
         diagnosisReport.put("results", results);
+        diagnosisReport.put("summary", summarizeDiagnosis(results));
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);
+    }
+
+    /** 统计诊断结果的通过/失败数量 */
+    public static Map<String, Object> summarizeDiagnosis(List<DiagnosisResultDto> results) {
+        int passed = 0;
+        for (DiagnosisResultDto r : results) {
+            if (r.isSuccess()) {
+                passed++;
+            }
+        }
+        Map<String, Object> summary = new HashMap<>();
+        summary.put("total", results.size());
+        summary.put("passed", passed);
+        summary.put("failed", results.size() - passed);
+        return summary;
     }
 
     @Override
@@ -715,90 +744,6 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
         // 如果没有端口，返回-1表示无法解析
         return -1;
-    }
-
-    /**
-     * 执行TCP ping诊断
-     *
-     * @param node        执行TCP ping的节点
-     * @param targetIp    目标IP地址
-     * @param port        目标端口
-     * @param description 诊断描述
-     * @return 诊断结果
-     */
-    private DiagnosisResult performTcpPingDiagnosis(Node node, String targetIp, int port, String description) {
-        try {
-            // 构建TCP ping请求数据
-            JSONObject tcpPingData = new JSONObject();
-            tcpPingData.put("ip", targetIp);
-            tcpPingData.put("port", port);
-            tcpPingData.put("count", 2);
-            tcpPingData.put("timeout", 3000); // 5秒超时
-
-            // 发送TCP ping命令到节点
-            GostDto gostResult = WebSocketServer.send_msg(node.getId(), tcpPingData, "TcpPing");
-
-            DiagnosisResult result = new DiagnosisResult();
-            result.setNodeId(node.getId());
-            result.setNodeName(node.getName());
-            result.setTargetIp(targetIp);
-            result.setTargetPort(port);
-            result.setDescription(description);
-            result.setTimestamp(System.currentTimeMillis());
-
-            if (gostResult != null && "OK".equals(gostResult.getMsg())) {
-                // 尝试解析TCP ping响应数据
-                try {
-                    if (gostResult.getData() != null) {
-                        JSONObject tcpPingResponse = (JSONObject) gostResult.getData();
-                        boolean success = tcpPingResponse.getBooleanValue("success");
-
-                        result.setSuccess(success);
-                        if (success) {
-                            result.setMessage("TCP连接成功");
-                            result.setAverageTime(tcpPingResponse.getDoubleValue("averageTime"));
-                            result.setPacketLoss(tcpPingResponse.getDoubleValue("packetLoss"));
-                        } else {
-                            result.setMessage(tcpPingResponse.getString("errorMessage"));
-                            result.setAverageTime(-1.0);
-                            result.setPacketLoss(100.0);
-                        }
-                    } else {
-                        // 没有详细数据，使用默认值
-                        result.setSuccess(true);
-                        result.setMessage("TCP连接成功");
-                        result.setAverageTime(0.0);
-                        result.setPacketLoss(0.0);
-                    }
-                } catch (Exception e) {
-                    // 解析响应数据失败，但TCP ping命令本身成功了
-                    result.setSuccess(true);
-                    result.setMessage("TCP连接成功，但无法解析详细数据");
-                    result.setAverageTime(0.0);
-                    result.setPacketLoss(0.0);
-                }
-            } else {
-                result.setSuccess(false);
-                result.setMessage(gostResult != null ? gostResult.getMsg() : "节点无响应");
-                result.setAverageTime(-1.0);
-                result.setPacketLoss(100.0);
-            }
-
-            return result;
-        } catch (Exception e) {
-            DiagnosisResult result = new DiagnosisResult();
-            result.setNodeId(node.getId());
-            result.setNodeName(node.getName());
-            result.setTargetIp(targetIp);
-            result.setTargetPort(port);
-            result.setDescription(description);
-            result.setSuccess(false);
-            result.setMessage("诊断执行异常: " + e.getMessage());
-            result.setTimestamp(System.currentTimeMillis());
-            result.setAverageTime(-1.0);
-            result.setPacketLoss(100.0);
-            return result;
-        }
     }
 
     /**
@@ -1668,22 +1613,5 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         public static NodeInfo error(String errorMessage) {
             return new NodeInfo(true, errorMessage, null, null, Collections.emptyList());
         }
-    }
-
-    /**
-     * 诊断结果数据类
-     */
-    @Data
-    public static class DiagnosisResult {
-        private Long nodeId;
-        private String nodeName;
-        private String targetIp;
-        private Integer targetPort;
-        private String description;
-        private boolean success;
-        private String message;
-        private double averageTime;
-        private double packetLoss;
-        private long timestamp;
     }
 }

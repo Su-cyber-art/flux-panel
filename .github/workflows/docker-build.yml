@@ -119,15 +119,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: vite-frontend/package-lock.json
+          cache-dependency-path: vue-frontend/package-lock.json
 
       - name: Install, audit, and build
-        working-directory: vite-frontend
+        working-directory: vue-frontend
         env:
           VITE_APP_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           npm ci
           npm audit --omit=dev --audit-level=high
+          npm run type-check
           npm run build
 
       - name: Set up Docker Buildx
@@ -143,7 +144,7 @@ jobs:
       - name: Build and push frontend image
         uses: docker/build-push-action@v6
         with:
-          context: vite-frontend
+          context: vue-frontend
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |

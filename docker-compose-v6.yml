@@ -55,7 +55,7 @@ services:
 
   frontend:
     image: ghcr.io/su-cyber-art/flux-panel-frontend:${APP_VERSION:-latest}
-    container_name: vite-frontend
+    container_name: vue-frontend
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT}:80"
