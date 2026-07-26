@@ -528,13 +528,18 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         }
 
 
+        // 5. 编排探测：先把所有 TCP 探测收集成批，按源节点分组并行执行，
+        //    再单独跑端到端回环。整个过程受总预算约束，超预算返回部分结果。
+        NodeDiagnostics.Budget budget = NodeDiagnostics.Budget.standard();
         List<DiagnosisResultDto> results = new ArrayList<>();
+        List<NodeDiagnostics.ProbeSpec> probes = new ArrayList<>();
         String[] remoteAddresses = forward.getRemoteAddr().split(",");
-        // 6. 根据隧道类型执行不同的诊断策略
+        boolean truncated = false;
+
         if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
             // 端口转发：先验证入口服务是否真的在监听，再由入口节点真实建连目标地址
             if (forward.getInPort() != null) {
-                results.add(NodeDiagnostics.tcpProbe(inNode, "127.0.0.1", forward.getInPort(),
+                probes.add(new NodeDiagnostics.ProbeSpec(inNode, "127.0.0.1", forward.getInPort(),
                         "入口监听端口(" + forward.getInPort() + ")", "LISTENER"));
             }
             for (String remoteAddress : remoteAddresses) {
@@ -543,8 +548,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-                results.add(NodeDiagnostics.tcpProbe(inNode, targetIp, targetPort, "入口->目标", "TARGET"));
+                probes.add(new NodeDiagnostics.ProbeSpec(inNode, targetIp, targetPort, "入口->目标", "TARGET"));
             }
+            results.addAll(NodeDiagnostics.probeBatch(probes));
         } else {
             NodeInfo nodeInfo = getRequiredNodes(tunnel);
             if (nodeInfo.isHasError()) {
@@ -557,10 +563,10 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
             // 入口监听探测
             if (forward.getInPort() != null) {
-                results.add(NodeDiagnostics.tcpProbe(inNode, "127.0.0.1", forward.getInPort(),
+                probes.add(new NodeDiagnostics.ProbeSpec(inNode, "127.0.0.1", forward.getInPort(),
                         "入口监听端口(" + forward.getInPort() + ")", "LISTENER"));
             }
-            // 逐跳真实建连 + 延迟
+            // 逐跳真实建连 + 延迟（源节点各不相同，可并行）
             for (int i = 0; i < pathNodes.size() - 1; i++) {
                 Node source = pathNodes.get(i);
                 Node target = pathNodes.get(i + 1);
@@ -568,7 +574,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetPort == null) {
                     return R.err("节点 " + target.getName() + " 缺少中转端口");
                 }
-                results.add(NodeDiagnostics.tcpProbe(source, target.getServerIp(), targetPort,
+                probes.add(new NodeDiagnostics.ProbeSpec(source, target.getServerIp(), targetPort,
                         source.getName() + "->" + target.getName(), "HOP"));
             }
 
@@ -580,15 +586,22 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
                 if (targetIp == null || targetPort == -1) {
                     return R.err("无法解析目标地址: " + remoteAddress);
                 }
-                results.add(NodeDiagnostics.tcpProbe(outNode, targetIp, targetPort, "出口->目标", "TARGET"));
+                probes.add(new NodeDiagnostics.ProbeSpec(outNode, targetIp, targetPort, "出口->目标", "TARGET"));
             }
+
+            results.addAll(NodeDiagnostics.probeBatch(probes));
 
             // 端到端真实数据回环（贯穿整条链路，字节级完整性校验）
             String pathDesc = pathNodes.stream().map(Node::getName).collect(Collectors.joining("->"));
-            results.add(NodeDiagnostics.chainLoopback(inNode, nodeInfo.getRelayNodes(), pathDesc));
+            if (budget.exhausted()) {
+                results.add(NodeDiagnostics.skipped("LOOPBACK", "端到端数据回环(" + pathDesc + ")"));
+                truncated = true;
+            } else {
+                results.add(NodeDiagnostics.chainLoopback(inNode, nodeInfo.getRelayNodes(), pathDesc));
+            }
         }
 
-        // 7. 构建诊断报告
+        // 6. 构建诊断报告
         Map<String, Object> diagnosisReport = new HashMap<>();
         diagnosisReport.put("forwardId", id);
         diagnosisReport.put("forwardName", forward.getName());
@@ -596,6 +609,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         diagnosisReport.put("pathNodeIds", tunnelService.getPathNodeIds(tunnel));
         diagnosisReport.put("results", results);
         diagnosisReport.put("summary", summarizeDiagnosis(results));
+        diagnosisReport.put("truncated", truncated);
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);

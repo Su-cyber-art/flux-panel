@@ -11,7 +11,7 @@ func loopbackTarget(port int) string {
 	return net.JoinHostPort("127.0.0.1", fmt.Sprintf("%d", port))
 }
 
-func TestEchoRelayRoundTripUsesHopTokens(t *testing.T) {
+func TestEchoRelayRoundTripForwardsEndToEndToken(t *testing.T) {
 	reporter := &WebSocketReporter{}
 	echo, err := reporter.handleEchoServer(EchoServerRequest{DurationMs: 5_000})
 	if err != nil {
@@ -21,7 +21,6 @@ func TestEchoRelayRoundTripUsesHopTokens(t *testing.T) {
 
 	relay, err := reporter.handleEchoRelay(EchoRelayRequest{
 		NextHop:    loopbackTarget(echo.Port),
-		NextToken:  echo.Token,
 		DurationMs: 5_000,
 	})
 	if err != nil {
@@ -31,7 +30,7 @@ func TestEchoRelayRoundTripUsesHopTokens(t *testing.T) {
 
 	resp, err := reporter.handleEchoProbe(EchoProbeRequest{
 		Target:      loopbackTarget(relay.Port),
-		Token:       relay.Token,
+		Token:       echo.Token,
 		Rounds:      3,
 		PayloadSize: 256,
 		TimeoutMs:   2_000,
@@ -57,7 +56,6 @@ func TestEchoRelayRejectsWrongToken(t *testing.T) {
 
 	relay, err := reporter.handleEchoRelay(EchoRelayRequest{
 		NextHop:    loopbackTarget(echo.Port),
-		NextToken:  echo.Token,
 		DurationMs: 5_000,
 	})
 	if err != nil {
@@ -80,12 +78,10 @@ func TestEchoRelayRejectsWrongToken(t *testing.T) {
 	}
 }
 
-func TestEchoRelayRequiresNextToken(t *testing.T) {
+func TestEchoRelayRequiresNextHop(t *testing.T) {
 	reporter := &WebSocketReporter{}
-	if _, err := reporter.handleEchoRelay(EchoRelayRequest{
-		NextHop: loopbackTarget(1),
-	}); err == nil {
-		t.Fatal("expected missing next token to be rejected")
+	if _, err := reporter.handleEchoRelay(EchoRelayRequest{}); err == nil {
+		t.Fatal("expected missing next hop to be rejected")
 	}
 }
 
@@ -109,7 +105,7 @@ func TestTcpPingCollectsRealConnections(t *testing.T) {
 	}()
 
 	addr := ln.Addr().(*net.TCPAddr)
-	stat := tcpPingCollect("127.0.0.1", addr.Port, 3, 1_000)
+	stat := tcpPingCollect("127.0.0.1", addr.Port, 3, 1_000, 4_000)
 	if stat.err != nil {
 		t.Fatalf("tcp ping failed: %v", stat.err)
 	}

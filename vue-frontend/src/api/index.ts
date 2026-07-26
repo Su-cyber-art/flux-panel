@@ -1,4 +1,4 @@
-import { post } from './http'
+import { post, LONG_TIMEOUT_MS } from './http'
 import type {
   ApiResponse,
   LoginData,
@@ -29,16 +29,14 @@ export const getNodeList = () => post<any[]>('/node/list', {})
 export const updateNode = (data: any) => post('/node/update', data)
 export const deleteNode = (id: number) => post('/node/delete', { id })
 export const getNodeInstallCommand = (id: number) => post<string>('/node/install', { id })
-export const checkNodeStatus = (nodeId?: number) =>
-  post('/node/check-status', nodeId ? { nodeId } : {})
 
 // ============ 隧道 ============
 export const createTunnel = (data: any) => post('/tunnel/create', data)
 export const getTunnelList = () => post<any[]>('/tunnel/list', {})
-export const getTunnelById = (id: number) => post('/tunnel/get', { id })
 export const updateTunnel = (data: any) => post('/tunnel/update', data)
 export const deleteTunnel = (id: number) => post('/tunnel/delete', { id })
-export const diagnoseTunnel = (tunnelId: number) => post('/tunnel/diagnose', { tunnelId })
+export const diagnoseTunnel = (tunnelId: number) =>
+  post('/tunnel/diagnose', { tunnelId }, LONG_TIMEOUT_MS)
 export const assignUserTunnel = (data: any) => post('/tunnel/user/assign', data)
 export const getUserTunnelList = (queryData: any = {}) => post<any[]>('/tunnel/user/list', queryData)
 export const removeUserTunnel = (params: { id: number }) => post('/tunnel/user/remove', params)
@@ -59,7 +57,8 @@ export const deleteForward = (id: number) => post('/forward/delete', { id })
 export const forceDeleteForward = (id: number) => post('/forward/force-delete', { id })
 export const pauseForwardService = (forwardId: number) => post('/forward/pause', { id: forwardId })
 export const resumeForwardService = (forwardId: number) => post('/forward/resume', { id: forwardId })
-export const diagnoseForward = (forwardId: number) => post('/forward/diagnose', { forwardId })
+export const diagnoseForward = (forwardId: number) =>
+  post('/forward/diagnose', { forwardId }, LONG_TIMEOUT_MS)
 export const updateForwardOrder = (data: { forwards: { id: number; inx: number }[] }) =>
   post('/forward/update-order', data)
 
@@ -73,13 +72,8 @@ export const deleteSpeedLimit = (id: number) => post('/speed-limit/delete', { id
 export const getConfigs = () => post<Record<string, string>>('/config/list', {})
 export const getConfigByName = (name: string) => post<any>('/config/get', { name })
 export const updateConfigs = (configMap: Record<string, string>) => post('/config/update', configMap)
-export const updateConfig = (name: string, value: string) =>
-  post('/config/update-single', { name, value })
 
 // ============ 验证码 ============
 export const checkCaptcha = () => post<number>('/captcha/check', {})
-export const generateCaptcha = () => post('/captcha/generate', {})
-export const verifyCaptcha = (data: { captchaId: string; trackData: string }) =>
-  post('/captcha/verify', data)
 
 export type { ApiResponse }

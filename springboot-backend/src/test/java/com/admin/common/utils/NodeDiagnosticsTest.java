@@ -43,14 +43,6 @@ class NodeDiagnosticsTest {
     }
 
     @Test
-    void startRelayOnOfflineNodeReturnsError() {
-        NodeDiagnostics.DiagEndpoint ep = NodeDiagnostics.startRelay(
-                offlineNode(), "203.0.113.8:12345", "next-hop-token");
-        assertFalse(ep.ok);
-        assertNotNull(ep.error);
-    }
-
-    @Test
     void localLoopbackOnOfflineNodeFails() {
         DiagnosisResultDto r = NodeDiagnostics.localLoopback(offlineNode(), "自检");
         assertFalse(r.isSuccess());
@@ -81,6 +73,58 @@ class NodeDiagnosticsTest {
         assertEquals("boom", d.getMessage());
         assertEquals(-1.0, d.getAverageTime());
         assertEquals(100.0, d.getPacketLoss());
+    }
+
+    @Test
+    void probeBatchKeepsInputOrderAndCount() {
+        Node a = offlineNode();
+        Node b = new Node();
+        b.setId(999_998L);
+        b.setName("另一个离线节点");
+        b.setServerIp("203.0.113.8");
+
+        var specs = java.util.List.of(
+                new NodeDiagnostics.ProbeSpec(a, "1.1.1.1", 80, "第一条", "HOP"),
+                new NodeDiagnostics.ProbeSpec(b, "1.1.1.1", 81, "第二条", "HOP"),
+                new NodeDiagnostics.ProbeSpec(a, "1.1.1.1", 82, "第三条", "TARGET"));
+
+        var results = NodeDiagnostics.probeBatch(specs);
+        assertEquals(3, results.size(), "结果数量必须与输入一致");
+        assertEquals("第一条", results.get(0).getDescription());
+        assertEquals("第二条", results.get(1).getDescription());
+        assertEquals("第三条", results.get(2).getDescription(), "并行执行后仍须按输入顺序返回");
+        for (var r : results) {
+            assertFalse(r.isSuccess(), "离线节点的探测必须判为失败");
+        }
+    }
+
+    @Test
+    void probeBatchHandlesEmptyAndSingle() {
+        assertTrue(NodeDiagnostics.probeBatch(java.util.List.of()).isEmpty());
+        assertTrue(NodeDiagnostics.probeBatch(null).isEmpty());
+        var one = NodeDiagnostics.probeBatch(java.util.List.of(
+                new NodeDiagnostics.ProbeSpec(offlineNode(), "1.1.1.1", 80, "单条", "HOP")));
+        assertEquals(1, one.size());
+        assertFalse(one.get(0).isSuccess());
+    }
+
+    @Test
+    void skippedResultIsMarkedAsFailureWithReason() {
+        DiagnosisResultDto d = NodeDiagnostics.skipped("LOOPBACK", "端到端数据回环");
+        assertFalse(d.isSuccess());
+        assertEquals("LOOPBACK", d.getCategory());
+        assertNotNull(d.getMessage());
+        assertTrue(d.getMessage().contains("跳过"), "被截断的项要让前端能看出是跳过而非失败");
+    }
+
+    @Test
+    void budgetReportsExhaustionOnceDrained() {
+        NodeDiagnostics.Budget fresh = NodeDiagnostics.Budget.standard();
+        assertFalse(fresh.exhausted(), "刚创建的预算不应判为耗尽");
+        assertTrue(fresh.remainingMs() > 0);
+
+        NodeDiagnostics.Budget drained = NodeDiagnostics.Budget.of(0);
+        assertTrue(drained.exhausted(), "零预算必须判为耗尽，从而跳过后续探测");
     }
 
     @Test

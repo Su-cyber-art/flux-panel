@@ -754,7 +754,9 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             return R.err(ERROR_TUNNEL_NOT_FOUND);
         }
 
+        NodeDiagnostics.Budget budget = NodeDiagnostics.Budget.standard();
         List<DiagnosisResultDto> results = new ArrayList<>();
+        boolean truncated = false;
 
         if (tunnel.getType() == TUNNEL_TYPE_PORT_FORWARD) {
             Node inNode = nodeService.getById(tunnel.getInNodeId());
@@ -790,6 +792,8 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
             }
 
             if (!relayPorts.isEmpty()) {
+                // 逐跳探测按源节点分组并行，避免逐条串行叠加时长
+                List<NodeDiagnostics.ProbeSpec> probes = new ArrayList<>();
                 for (int i = 0; i < pathNodes.size() - 1; i++) {
                     Node source = pathNodes.get(i);
                     Node target = pathNodes.get(i + 1);
@@ -797,16 +801,22 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
                     if (targetPort == null) {
                         continue;
                     }
-                    results.add(NodeDiagnostics.tcpProbe(source, target.getServerIp(), targetPort,
+                    probes.add(new NodeDiagnostics.ProbeSpec(source, target.getServerIp(), targetPort,
                             source.getName() + "->" + target.getName(), "HOP"));
                 }
+                results.addAll(NodeDiagnostics.probeBatch(probes));
             }
 
             // 端到端真实数据回环：不依赖生产中转端口，始终贯穿整条链路做字节级校验
             Node inNode = pathNodes.get(0);
             List<Node> relayNodes = new ArrayList<>(pathNodes.subList(1, pathNodes.size()));
             String pathDesc = pathNodes.stream().map(Node::getName).collect(Collectors.joining("->"));
-            results.add(NodeDiagnostics.chainLoopback(inNode, relayNodes, pathDesc));
+            if (budget.exhausted()) {
+                results.add(NodeDiagnostics.skipped("LOOPBACK", "端到端数据回环(" + pathDesc + ")"));
+                truncated = true;
+            } else {
+                results.add(NodeDiagnostics.chainLoopback(inNode, relayNodes, pathDesc));
+            }
         }
 
         // 4. 构建诊断报告
@@ -817,6 +827,7 @@ public class TunnelServiceImpl extends ServiceImpl<TunnelMapper, Tunnel> impleme
         diagnosisReport.put("pathNodeIds", getPathNodeIds(tunnel));
         diagnosisReport.put("results", results);
         diagnosisReport.put("summary", ForwardServiceImpl.summarizeDiagnosis(results));
+        diagnosisReport.put("truncated", truncated);
         diagnosisReport.put("timestamp", System.currentTimeMillis());
 
         return R.ok(diagnosisReport);

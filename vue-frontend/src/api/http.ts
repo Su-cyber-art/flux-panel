@@ -77,14 +77,21 @@ export async function get<T = any>(url: string, params?: any): Promise<ApiRespon
   }
 }
 
-export async function post<T = any>(url: string, body?: any): Promise<ApiResponse<T>> {
+/** 诊断类接口耗时较长（逐跳建连 + 端到端回环），需要更长的等待窗口 */
+export const LONG_TIMEOUT_MS = 60000
+
+export async function post<T = any>(
+  url: string,
+  body?: any,
+  timeoutMs?: number,
+): Promise<ApiResponse<T>> {
   if (getBaseURL() === '') {
     return { code: -1, msg: ' - 请先设置面板地址', data: null as any }
   }
   try {
     const config: AxiosRequestConfig = {
       baseURL: getBaseURL(),
-      timeout: 30000,
+      timeout: timeoutMs ?? 30000,
       headers: authHeaders({ 'Content-Type': 'application/json' }),
     }
     const res = await axios.post<ApiResponse<T>>(url, body ?? {}, config)

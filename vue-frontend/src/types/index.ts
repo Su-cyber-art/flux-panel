@@ -253,5 +253,7 @@ export interface DiagnosisReport {
   pathNodeIds?: number[]
   results: DiagnosisResultItem[]
   summary?: { total: number; passed: number; failed: number }
+  /** true 表示诊断因总时长上限被截断，部分检查未执行 */
+  truncated?: boolean
   timestamp: number
 }

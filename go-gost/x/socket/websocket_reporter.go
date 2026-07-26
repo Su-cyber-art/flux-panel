@@ -67,10 +67,12 @@ type CommandResponse struct {
 
 // TcpPingRequest TCP ping请求结构体
 type TcpPingRequest struct {
-	IP        string `json:"ip"`
-	Port      int    `json:"port"`
-	Count     int    `json:"count"`
-	Timeout   int    `json:"timeout"` // 超时时间(毫秒)
+	IP      string `json:"ip"`
+	Port    int    `json:"port"`
+	Count   int    `json:"count"`
+	Timeout int    `json:"timeout"` // 单次建连超时(毫秒)
+	// BudgetMs 整个探测的硬总预算(毫秒)，含 DNS。必须小于面板命令响应窗口。
+	BudgetMs  int    `json:"budgetMs"`
 	RequestId string `json:"requestId,omitempty"`
 }
 
@@ -79,13 +81,13 @@ type TcpPingResponse struct {
 	IP           string  `json:"ip"`
 	Port         int     `json:"port"`
 	Success      bool    `json:"success"`
-	AverageTime  float64 `json:"averageTime"` // 平均连接时间(ms)
-	MinTime      float64 `json:"minTime"`     // 最小连接时间(ms)
-	MaxTime      float64 `json:"maxTime"`     // 最大连接时间(ms)
-	Jitter       float64 `json:"jitter"`      // 抖动(ms)
-	Attempts     int     `json:"attempts"`    // 探测次数
+	AverageTime  float64 `json:"averageTime"`  // 平均连接时间(ms)
+	MinTime      float64 `json:"minTime"`      // 最小连接时间(ms)
+	MaxTime      float64 `json:"maxTime"`      // 最大连接时间(ms)
+	Jitter       float64 `json:"jitter"`       // 抖动(ms)
+	Attempts     int     `json:"attempts"`     // 探测次数
 	SuccessCount int     `json:"successCount"` // 成功次数
-	PacketLoss   float64 `json:"packetLoss"`  // 连接失败率(%)
+	PacketLoss   float64 `json:"packetLoss"`   // 连接失败率(%)
 	ErrorMessage string  `json:"errorMessage,omitempty"`
 	RequestId    string  `json:"requestId,omitempty"`
 }
@@ -104,6 +106,7 @@ type WebSocketReporter struct {
 	connected      bool
 	connecting     bool              // 新增：正在连接状态
 	connMutex      sync.Mutex        // 新增：连接状态锁
+	writeMutex     sync.Mutex        // 写锁：gorilla/websocket 不允许并发写同一连接
 	aesCrypto      *crypto.AESCrypto // 新增：AES加密器
 }
 
@@ -354,6 +357,10 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 		messageData = jsonData
 	}
 
+	// 写操作必须串行：命令响应与遥测上报来自不同 goroutine
+	w.writeMutex.Lock()
+	defer w.writeMutex.Unlock()
+
 	// 设置写入超时
 	w.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 
@@ -471,7 +478,9 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 			}
 
 			if cmdMsg.Type != "call" {
-				w.routeCommand(cmdMsg)
+				// 异步执行：长耗时命令（诊断探测等）不得阻塞读循环，
+				// 否则该节点在探测期间收不到任何后续命令。
+				go w.routeCommand(cmdMsg)
 			}
 		} else {
 			// 处理普通消息
@@ -482,7 +491,9 @@ func (w *WebSocketReporter) handleReceivedMessage(messageType int, message []byt
 				return
 			}
 			if cmdMsg.Type != "call" {
-				w.routeCommand(cmdMsg)
+				// 异步执行：长耗时命令（诊断探测等）不得阻塞读循环，
+				// 否则该节点在探测期间收不到任何后续命令。
+				go w.routeCommand(cmdMsg)
 			}
 		}
 
@@ -502,6 +513,13 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 	fmt.Println("🔔 收到命令: ", string(jsonBytes))
 	var err error
 	var response CommandResponse
+
+	// 命令改为异步执行后，变更类命令仍需串行，避免并发改动 gost 运行配置。
+	// 只读类命令（诊断探测等）不加锁，可并发执行。
+	if commandChangesConfig(cmd.Type) {
+		mutatingCmdMutex.Lock()
+		defer mutatingCmdMutex.Unlock()
+	}
 
 	// 传递 requestId
 	response.RequestId = cmd.RequestId
@@ -602,6 +620,9 @@ func (w *WebSocketReporter) routeCommand(cmd CommandMessage) {
 
 	w.sendResponse(response)
 }
+
+// mutatingCmdMutex 串行化所有会改动 gost 运行配置的命令
+var mutatingCmdMutex sync.Mutex
 
 func commandChangesConfig(commandType string) bool {
 	switch commandType {
@@ -1005,6 +1026,10 @@ func (w *WebSocketReporter) sendResponse(response CommandResponse) {
 		timeout = 30 * time.Second
 	}
 
+	// 写操作必须串行：命令响应可能与遥测上报并发
+	w.writeMutex.Lock()
+	defer w.writeMutex.Unlock()
+
 	w.conn.SetWriteDeadline(time.Now().Add(timeout))
 	if err := w.conn.WriteMessage(websocket.TextMessage, messageData); err != nil {
 		fmt.Printf("❌ 发送响应失败: %v\n", err)
@@ -1141,8 +1166,8 @@ func (w *WebSocketReporter) handleTcpPing(data interface{}) (TcpPingResponse, er
 		req.Timeout = 5000 // 默认5秒超时
 	}
 
-	// 执行真实 TCP 建连探测，收集 min/avg/max/jitter/丢包 等指标
-	stat := tcpPingCollect(req.IP, req.Port, req.Count, req.Timeout)
+	// 执行真实 TCP 建连探测，收集 min/avg/max/jitter/丢包 等指标（受硬总预算约束）
+	stat := tcpPingCollect(req.IP, req.Port, req.Count, req.Timeout, req.BudgetMs)
 
 	response := TcpPingResponse{
 		IP:           req.IP,

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import {
   NModal,
+  NCard,
   NButton,
   NSpin,
   NTag,
@@ -41,12 +42,12 @@ const summary = computed(() => {
 
 function quality(avg?: number, loss?: number): { text: string; type: 'success' | 'info' | 'warning' | 'error' } | null {
   if (avg == null || loss == null || avg < 0) return null
-  if (avg < 30 && loss === 0) return { text: '优秀', type: 'success' }
-  if (avg < 50 && loss === 0) return { text: '很好', type: 'success' }
-  if (avg < 100 && loss < 1) return { text: '良好', type: 'info' }
-  if (avg < 150 && loss < 2) return { text: '一般', type: 'warning' }
-  if (avg < 200 && loss < 5) return { text: '较差', type: 'warning' }
-  return { text: '很差', type: 'error' }
+  if (avg < 30 && loss === 0) return { text: '🚀 优秀', type: 'success' }
+  if (avg < 50 && loss === 0) return { text: '✨ 很好', type: 'success' }
+  if (avg < 100 && loss < 1) return { text: '👍 良好', type: 'info' }
+  if (avg < 150 && loss < 2) return { text: '😐 一般', type: 'warning' }
+  if (avg < 200 && loss < 5) return { text: '😟 较差', type: 'warning' }
+  return { text: '😵 很差', type: 'error' }
 }
 
 function fmtMs(v?: number): string {
@@ -104,13 +105,25 @@ function fmtBytes(v?: number): string {
         </div>
       </div>
 
+      <NAlert
+        v-if="report?.truncated"
+        type="warning"
+        :bordered="false"
+        style="margin-bottom:12px"
+        title="诊断被截断"
+      >
+        整轮诊断已达时长上限，部分检查未执行。可稍后重试，或先修复上面已暴露的问题。
+      </NAlert>
+
       <div style="display:flex;flex-direction:column;gap:12px;max-height:56vh;overflow-y:auto;padding-right:4px">
-        <section
+        <NCard
           v-for="(r, i) in results"
           :key="i"
-          class="diagnosis-item"
+          size="small"
+          :bordered="true"
           :style="{
             borderColor: r.success ? 'rgba(24,160,88,.4)' : 'rgba(224,65,65,.45)',
+            borderLeftWidth: '3px',
           }"
         >
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
@@ -140,7 +153,7 @@ function fmtBytes(v?: number): string {
 
           <div
             v-if="r.success"
-            class="metric-grid"
+            style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px"
           >
             <div class="fx-metric">
               <div class="fx-metric-v">{{ fmtMs(r.averageTime) }}</div>
@@ -183,7 +196,7 @@ function fmtBytes(v?: number): string {
           >
             {{ r.message || '连接失败' }}
           </NAlert>
-        </section>
+        </NCard>
       </div>
 
       <NEmpty v-if="!results.length" description="暂无诊断数据" style="padding:40px 0" />
@@ -199,24 +212,11 @@ function fmtBytes(v?: number): string {
 </template>
 
 <style scoped>
-.diagnosis-item {
-  padding: 12px;
-  border: 1px solid;
-  border-left-width: 3px;
-  border-radius: 8px;
-  background: var(--bg-elevated);
-}
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
-}
 .fx-metric {
   text-align: center;
   padding: 8px 4px;
   background: var(--bg-subtle);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 .fx-metric-v {
   font-size: 20px;
@@ -228,10 +228,5 @@ function fmtBytes(v?: number): string {
   font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
-}
-@media (max-width: 520px) {
-  .metric-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 </style>
