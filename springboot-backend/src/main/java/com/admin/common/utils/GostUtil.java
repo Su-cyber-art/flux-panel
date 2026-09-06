@@ -14,6 +14,7 @@ import java.util.Objects;
 
 public class GostUtil {
 
+    private static final int UDP_READ_BUFFER_SIZE = 64 * 1024;
 
     public static GostDto AddLimiters(Long node_id, Long name, String speed) {
         JSONObject data = createLimiterData(name, speed);
@@ -325,6 +326,9 @@ public class GostUtil {
         if (Objects.equals(protocol, "udp")){
             JSONObject metadata = new JSONObject();
             metadata.put("keepAlive", true);
+            // Older nodes ignore JSON numbers decoded as float64 in integer metadata.
+            // A string is parsed correctly both over WebSocket and after a restart.
+            metadata.put("readBufferSize", Integer.toString(UDP_READ_BUFFER_SIZE));
             listener.put("metadata", metadata);
         }
         return listener;

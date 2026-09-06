@@ -237,6 +237,7 @@ jobs:
           cp install.sh panel_install.sh gost.sql artifacts/
           cp docker-compose-v4.yml docker-compose-v6.yml artifacts/
           cp docs/mysql-5.7-to-8.4.md artifacts/mysql-5.7-to-8.4.md
+          cp docs/udp-forwarding.md artifacts/udp-forwarding.md
           sed -i "s/__FLUX_VERSION__/${RELEASE_TAG}/g" artifacts/install.sh artifacts/panel_install.sh
           sed -i "s|\${APP_VERSION:-latest}|${VERSION}|g" \
             artifacts/docker-compose-v4.yml artifacts/docker-compose-v6.yml
@@ -252,6 +253,9 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then
             release_flags+=(--prerelease)
           fi
+          if [[ -f "docs/releases/${VERSION}.md" ]]; then
+            release_flags+=(--notes-file "docs/releases/${VERSION}.md")
+          fi
           gh release create "$GITHUB_REF_NAME" \
             artifacts/gost-amd64 \
             artifacts/gost-arm64 \
@@ -261,6 +265,7 @@ jobs:
             artifacts/docker-compose-v6.yml \
             artifacts/gost.sql \
             artifacts/mysql-5.7-to-8.4.md \
+            artifacts/udp-forwarding.md \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --generate-notes \

@@ -8,18 +8,20 @@ import (
 )
 
 const (
-	defaultTTL            = 5 * time.Second
-	defaultReadBufferSize = 8192
+	defaultTTL = 5 * time.Second
+	// Existing panel configurations omit readBufferSize. Preserve a full UDP
+	// datagram when loading them after a node upgrade.
+	defaultReadBufferSize = 64 * 1024
 	defaultReadQueueSize  = 128
 	defaultBacklog        = 128
 )
 
 type metadata struct {
-	readBufferSize         int
-	readQueueSize          int
-	backlog                int
-	keepalive              bool
-	ttl                    time.Duration
+	readBufferSize int
+	readQueueSize  int
+	backlog        int
+	keepalive      bool
+	ttl            time.Duration
 }
 
 func (l *udpListener) parseMetadata(md mdata.Metadata) (err error) {

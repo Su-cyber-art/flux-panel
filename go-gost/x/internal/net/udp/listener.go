@@ -11,6 +11,8 @@ import (
 	"github.com/go-gost/core/logger"
 )
 
+var errRecvQueueFull = errors.New("recv queue is full")
+
 type ListenConfig struct {
 	Addr           net.Addr
 	Backlog        int
@@ -21,12 +23,14 @@ type ListenConfig struct {
 	Logger         logger.Logger
 }
 type listener struct {
-	conn     net.PacketConn
-	cqueue   chan net.Conn
-	connPool *connPool
-	closed   chan struct{}
-	errChan  chan error
-	config   *ListenConfig
+	conn      net.PacketConn
+	cqueue    chan net.Conn
+	connPool  *connPool
+	closed    chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+	errChan   chan error
+	config    *ListenConfig
 }
 
 func NewListener(conn net.PacketConn, cfg *ListenConfig) net.Listener {
@@ -38,6 +42,7 @@ func NewListener(conn net.PacketConn, cfg *ListenConfig) net.Listener {
 		conn:    conn,
 		cqueue:  make(chan net.Conn, cfg.Backlog),
 		closed:  make(chan struct{}),
+		done:    make(chan struct{}),
 		errChan: make(chan error, 1),
 		config:  cfg,
 	}
@@ -62,14 +67,17 @@ func (ln *listener) Accept() (conn net.Conn, err error) {
 }
 
 func (ln *listener) listenLoop() {
+	defer close(ln.done)
+	// Reuse the receive buffer for small packets, which are copied into
+	// smaller size classes. Large packets transfer ownership without a copy.
+	b := bufpool.Get(ln.config.ReadBufferSize)
+	defer func() { bufpool.Put(b) }()
 	for {
 		select {
 		case <-ln.closed:
 			return
 		default:
 		}
-
-		b := bufpool.Get(ln.config.ReadBufferSize)
 
 		n, raddr, err := ln.conn.ReadFrom(b)
 		if err != nil {
@@ -80,11 +88,16 @@ func (ln *listener) listenLoop() {
 
 		c := ln.getConn(raddr)
 		if c == nil {
-			bufpool.Put(b)
 			continue
 		}
 
-		if err := c.WriteQueue(b[:n]); err != nil {
+		if n > cap(b)/2 {
+			if err := c.writeOwnedQueue(b[:n]); err != nil {
+				ln.config.Logger.Warn("data discarded: ", err)
+			} else {
+				b = bufpool.Get(ln.config.ReadBufferSize)
+			}
+		} else if err := c.WriteQueue(b[:n]); err != nil {
 			ln.config.Logger.Warn("data discarded: ", err)
 		}
 	}
@@ -98,13 +111,14 @@ func (ln *listener) Addr() net.Addr {
 }
 
 func (ln *listener) Close() error {
-	select {
-	case <-ln.closed:
-	default:
+	ln.closeOnce.Do(func() {
 		close(ln.closed)
 		ln.conn.Close()
+		// A read already in flight may still create a client. Wait for it
+		// before closing the pool so every pending packet is released.
+		<-ln.done
 		ln.connPool.Close()
-	}
+	})
 
 	return nil
 }
@@ -189,10 +203,19 @@ func (c *conn) Close() error {
 
 	select {
 	case <-c.closed:
+		return nil
 	default:
 		close(c.closed)
 	}
-	return nil
+	// Enqueues share closeMutex, so no packet can arrive after this drain.
+	for {
+		select {
+		case b := <-c.rc:
+			bufpool.Put(b)
+		default:
+			return nil
+		}
+	}
 }
 
 func (c *conn) isClosed() bool {
@@ -225,14 +248,38 @@ func (c *conn) SetIdle(idle bool) {
 }
 
 func (c *conn) WriteQueue(b []byte) error {
-	select {
-	case c.rc <- b:
-		return nil
+	return c.queueDatagram(b, true)
+}
 
-	case <-c.closed:
+// writeOwnedQueue takes ownership of b only when it succeeds. On failure,
+// the listener can reuse its receive buffer without an allocation.
+func (c *conn) writeOwnedQueue(b []byte) error {
+	return c.queueDatagram(b, false)
+}
+
+func (c *conn) queueDatagram(b []byte, copyPayload bool) error {
+	c.closeMutex.Lock()
+	defer c.closeMutex.Unlock()
+	if c.isClosed() {
 		return net.ErrClosed
-
+	}
+	// Avoid allocating and copying packets that cannot enter a full queue.
+	// An unbuffered queue may still have a waiting reader.
+	if cap(c.rc) > 0 && len(c.rc) == cap(c.rc) {
+		return errRecvQueueFull
+	}
+	packet := b
+	if copyPayload {
+		packet = bufpool.Get(len(b))
+		copy(packet, b)
+	}
+	select {
+	case c.rc <- packet:
+		return nil
 	default:
-		return errors.New("recv queue is full")
+		if copyPayload {
+			bufpool.Put(packet)
+		}
+		return errRecvQueueFull
 	}
 }
