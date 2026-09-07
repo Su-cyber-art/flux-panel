@@ -26,6 +26,11 @@ const form = reactive({
 const errors = reactive<{ username?: string; password?: string }>({})
 
 const loading = ref(false)
+const submitError = ref('')
+function showSubmitError(message: string) {
+  submitError.value = message
+  toast.error(message)
+}
 const showCaptcha = ref(false)
 const captchaContainer = ref<HTMLElement | null>(null)
 let captchaSession: ReturnType<typeof manageCaptcha> | null = null
@@ -43,7 +48,7 @@ function captchaError(error: unknown) {
   console.error('验证码请求失败:', error)
   closeCaptcha()
   loading.value = false
-  toast.error(error instanceof Error ? error.message : '验证码加载失败，请重试')
+  showSubmitError(error instanceof Error ? error.message : '验证码加载失败，请重试')
 }
 
 const isWebView = isWebViewFunc()
@@ -75,10 +80,12 @@ function validateForm(): boolean {
 
 // 输入时清除该字段错误
 function onUsername(value: string) {
+  submitError.value = ''
   form.username = value
   if (errors.username) errors.username = undefined
 }
 function onPassword(value: string) {
+  submitError.value = ''
   form.password = value
   if (errors.password) errors.password = undefined
 }
@@ -143,7 +150,7 @@ async function performLogin() {
     })
 
     if (response.code !== 0) {
-      toast.error(response.msg || '登录失败')
+      showSubmitError(response.msg || '登录失败')
       return
     }
 
@@ -160,7 +167,7 @@ async function performLogin() {
     router.push('/dashboard')
   } catch (error) {
     console.error('登录错误:', error)
-    toast.error('网络错误，请稍后重试')
+    showSubmitError('网络错误，请稍后重试')
   } finally {
     form.captchaId = ''
     loading.value = false
@@ -170,6 +177,7 @@ async function performLogin() {
 // 提交登录（先检查是否需要验证码）
 async function handleLogin() {
   if (loading.value || disposed) return
+  submitError.value = ''
   if (!validateForm()) return
 
   loading.value = true
@@ -179,7 +187,7 @@ async function handleLogin() {
     if (disposed) return
 
     if (checkResponse.code !== 0) {
-      toast.error('检查验证码状态失败，请重试' + checkResponse.msg)
+      showSubmitError(checkResponse.msg || '检查验证码状态失败，请重试')
       loading.value = false
       return
     }
@@ -195,7 +203,7 @@ async function handleLogin() {
     }
   } catch (error) {
     console.error('检查验证码状态错误:', error)
-    toast.error('网络错误，请稍后重试' + error)
+    showSubmitError('网络错误，请稍后重试')
     loading.value = false
   }
 }
@@ -253,6 +261,8 @@ onUnmounted(() => {
           />
           <p v-if="errors.password" class="field-error">{{ errors.password }}</p>
         </div>
+
+        <p v-if="submitError" role="alert" class="break-words rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{{ submitError }}</p>
 
         <NButton
           class="login-submit"

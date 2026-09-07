@@ -31,6 +31,9 @@ UI_PREVIEW_PORT=3001 UI_PREVIEW_API_PORT=17366 npm run dev:preview
 
 组件命令行工具保留在开发依赖，字体通过 `@fontsource-variable/geist` 随应用
 打包。轻提示统一使用 `useToast()`，底层已切换为 vue-sonner。
+`Sonner.vue` 必须导入 `vue-sonner/style.css`，否则提示不会按浮层定位。登录失败
+同时保留在表单内，直到用户编辑或重试；`test:captcha` 也覆盖登录页成功提交
+凭证和失败反馈流程。
 
 
 ## 目录结构
