@@ -571,6 +571,7 @@ onMounted(loadNodes)
 
     <!-- 新增 / 编辑 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showFormModal"
       preset="card"
       :title="isEdit ? '编辑节点' : '新增节点'"
@@ -725,6 +726,7 @@ onMounted(loadNodes)
 
     <!-- 安装命令 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showInstallModal"
       preset="card"
       :title="`安装命令 - ${currentNodeName}`"
@@ -765,6 +767,7 @@ onMounted(loadNodes)
 
     <!-- 删除确认 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showDeleteModal"
       preset="card"
       style="width: 460px; max-width: 94vw"

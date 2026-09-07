@@ -581,6 +581,7 @@ onMounted(loadData)
 
     <!-- 新增 / 编辑 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="modalOpen"
       preset="card"
       style="width: 720px; max-width: 94vw"
@@ -807,6 +808,7 @@ onMounted(loadData)
 
     <!-- 删除确认 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="deleteModalOpen"
       preset="card"
       style="width: 480px; max-width: 94vw"

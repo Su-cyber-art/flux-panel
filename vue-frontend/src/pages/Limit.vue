@@ -211,6 +211,7 @@ onMounted(load)
 
     <!-- 新增 / 编辑 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showModal"
       preset="card"
       :title="isEdit ? '编辑限速规则' : '新增限速规则'"
@@ -259,6 +260,7 @@ onMounted(load)
 
     <!-- 删除确认 弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showDelete"
       preset="card"
       style="width: 460px; max-width: 94vw"

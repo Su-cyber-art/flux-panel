@@ -676,6 +676,7 @@ onMounted(loadAll)
 
     <!-- 用户表单弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showUserModal"
       preset="card"
       :title="isEditUser ? '编辑用户' : '新增用户'"
@@ -752,6 +753,7 @@ onMounted(loadAll)
 
     <!-- 删除用户弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showDeleteUser"
       preset="card"
       style="width: 460px; max-width: 94vw"
@@ -773,6 +775,7 @@ onMounted(loadAll)
 
     <!-- 重置用户流量弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showResetUser"
       preset="card"
       style="width: 480px; max-width: 94vw"
@@ -813,6 +816,7 @@ onMounted(loadAll)
 
     <!-- 隧道权限管理弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showTunnelModal"
       preset="card"
       :title="`用户 ${currentUser?.user} 的隧道权限管理`"
@@ -905,6 +909,7 @@ onMounted(loadAll)
 
     <!-- 编辑隧道权限弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showEditTunnel"
       preset="card"
       :title="`编辑隧道权限 - ${editTunnelForm.tunnelName}`"
@@ -977,6 +982,7 @@ onMounted(loadAll)
 
     <!-- 删除隧道权限弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showDeleteTunnel"
       preset="card"
       style="width: 480px; max-width: 94vw"
@@ -998,6 +1004,7 @@ onMounted(loadAll)
 
     <!-- 重置隧道流量弹窗 -->
     <NModal
+      class="panel-scroll-modal"
       :show="showResetTunnel"
       preset="card"
       style="width: 480px; max-width: 94vw"

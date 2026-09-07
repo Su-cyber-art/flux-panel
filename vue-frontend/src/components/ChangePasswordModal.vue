@@ -73,13 +73,15 @@ function onShow(v: boolean) {
 </script>
 <template>
   <Dialog :open="props.show" @update:open="onShow">
-    <DialogContent class="sm:max-w-md">
+    <DialogContent class="overflow-hidden sm:max-w-md">
       <DialogHeader><DialogTitle>修改账户信息</DialogTitle><DialogDescription>修改后需要使用新的账户信息重新登录。</DialogDescription></DialogHeader>
-      <form class="space-y-4" @submit.prevent="submit">
-        <div class="space-y-2"><label for="new-account-name" class="field-label">新用户名</label><Input id="new-account-name" v-model="form.newUsername" autocomplete="username" placeholder="至少 3 个字符" /></div>
-        <div class="space-y-2"><label for="current-password" class="field-label">当前密码</label><Input id="current-password" v-model="form.currentPassword" type="password" autocomplete="current-password" /></div>
-        <div class="space-y-2"><label for="new-password" class="field-label">新密码</label><Input id="new-password" v-model="form.newPassword" type="password" autocomplete="new-password" placeholder="至少 6 个字符" /></div>
-        <div class="space-y-2"><label for="confirm-password" class="field-label">确认新密码</label><Input id="confirm-password" v-model="form.confirmPassword" type="password" autocomplete="new-password" /></div>
+      <form class="flex min-h-0 flex-col gap-4" @submit.prevent="submit">
+        <div class="min-h-0 space-y-4 overflow-y-auto">
+          <div class="space-y-2"><label for="new-account-name" class="field-label">新用户名</label><Input id="new-account-name" v-model="form.newUsername" autocomplete="username" placeholder="至少 3 个字符" /></div>
+          <div class="space-y-2"><label for="current-password" class="field-label">当前密码</label><Input id="current-password" v-model="form.currentPassword" type="password" autocomplete="current-password" /></div>
+          <div class="space-y-2"><label for="new-password" class="field-label">新密码</label><Input id="new-password" v-model="form.newPassword" type="password" autocomplete="new-password" placeholder="至少 6 个字符" /></div>
+          <div class="space-y-2"><label for="confirm-password" class="field-label">确认新密码</label><Input id="confirm-password" v-model="form.confirmPassword" type="password" autocomplete="new-password" /></div>
+        </div>
         <DialogFooter class="pt-2"><Button type="button" variant="outline" @click="onShow(false)">取消</Button><Button type="submit" :disabled="loading"><LoaderCircle v-if="loading" class="size-4 animate-spin" />保存修改</Button></DialogFooter>
       </form>
     </DialogContent>

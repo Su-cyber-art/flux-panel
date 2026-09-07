@@ -72,9 +72,9 @@ function logout() { auth.logout(); router.push('/') }
     </div>
 
     <Sheet v-model:open="drawerOpen"><SheetContent side="left" class="gap-0 bg-sidebar p-0 data-[side=left]:w-[280px] data-[side=left]:sm:max-w-[280px]">
-      <SheetHeader class="border-b p-6"><SheetTitle class="flex items-center gap-2 text-lg"><Command class="size-5" />{{ brand }}{{ brand === 'flux' ? ' panel' : '' }}</SheetTitle><SheetDescription>转发与网络管理</SheetDescription></SheetHeader>
-      <div class="flex-1 overflow-y-auto p-4"><SidebarNavigation @navigate="drawerOpen = false" /></div>
-      <div class="border-t p-4"><Button variant="ghost" class="w-full justify-start" @click="logout"><LogOut class="size-4" />退出登录</Button></div>
+      <SheetHeader class="shrink-0 border-b p-6"><SheetTitle class="flex items-center gap-2 text-lg"><Command class="size-5" />{{ brand }}{{ brand === 'flux' ? ' panel' : '' }}</SheetTitle><SheetDescription>转发与网络管理</SheetDescription></SheetHeader>
+      <div class="min-h-0 flex-1 overflow-y-auto p-4"><SidebarNavigation @navigate="drawerOpen = false" /></div>
+      <div class="shrink-0 border-t p-4"><Button variant="ghost" class="w-full justify-start" @click="logout"><LogOut class="size-4" />退出登录</Button></div>
     </SheetContent></Sheet>
     <ChangePasswordModal v-model:show="passwordOpen" />
   </div>

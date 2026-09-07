@@ -23,7 +23,7 @@ watch(() => vm.showStrategy, show => { if (show) advanced.value = true })
 <template>
   <Sheet :open="vm.showFormModal" @update:open="value => value ? vm.showFormModal = true : vm.closeFormModal()">
     <SheetContent class="flex flex-col gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-[480px]">
-      <SheetHeader class="border-b px-6 py-6">
+      <SheetHeader class="shrink-0 border-b px-6 py-6">
         <div class="mb-2 flex size-10 items-center justify-center rounded-xl border bg-muted/40"><Network class="size-5" /></div>
         <SheetTitle class="text-xl">{{ vm.isEdit ? '编辑转发' : '新建转发' }}</SheetTitle>
         <SheetDescription>设置入口和目标地址，通过隧道连接你的服务。</SheetDescription>
@@ -99,9 +99,9 @@ watch(() => vm.showStrategy, show => { if (show) advanced.value = true })
   <Dialog v-model:open="vm.showPortWarning"><DialogContent class="sm:max-w-md"><DialogHeader><DialogTitle>入口端口不可用</DialogTitle><DialogDescription>{{ vm.portWarningMessage }}</DialogDescription></DialogHeader><DialogFooter><Button @click="vm.showPortWarning = false">返回修改</Button></DialogFooter></DialogContent></Dialog>
 
   <Dialog :open="vm.showExport" @update:open="value => value ? vm.showExport = true : vm.closeExport()">
-    <DialogContent class="sm:max-w-xl">
+    <DialogContent class="overflow-hidden sm:max-w-xl">
       <DialogHeader><DialogTitle>导出转发</DialogTitle><DialogDescription>按选定隧道导出规则，便于迁移或备份。</DialogDescription></DialogHeader>
-      <div class="space-y-4 py-2">
+      <div class="min-h-0 space-y-4 overflow-y-auto py-2">
         <Select :model-value="vm.exportTunnelId == null ? undefined : String(vm.exportTunnelId)" @update:model-value="value => vm.exportTunnelId = Number(value)">
           <SelectTrigger class="w-full" aria-label="导出隧道"><SelectValue placeholder="选择要导出的隧道" /></SelectTrigger>
           <SelectContent><SelectItem v-for="tunnel in vm.tunnels" :key="tunnel.id" :value="String(tunnel.id)">{{ tunnel.name }}</SelectItem></SelectContent>
@@ -113,9 +113,9 @@ watch(() => vm.showStrategy, show => { if (show) advanced.value = true })
     </DialogContent>
   </Dialog>
   <Dialog :open="vm.showImport" @update:open="value => { if (!vm.importLoading) vm.showImport = value }">
-    <DialogContent class="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
+    <DialogContent class="overflow-hidden sm:max-w-xl">
       <DialogHeader><DialogTitle>导入转发</DialogTitle><DialogDescription>粘贴已有规则，批量创建到指定隧道。</DialogDescription></DialogHeader>
-      <div class="space-y-4 py-2">
+      <div class="min-h-0 space-y-4 overflow-y-auto py-2">
         <Select :model-value="vm.importTunnelId == null ? undefined : String(vm.importTunnelId)" :disabled="vm.importLoading" @update:model-value="value => vm.importTunnelId = Number(value)">
           <SelectTrigger class="w-full" aria-label="导入隧道"><SelectValue placeholder="选择目标隧道" /></SelectTrigger>
           <SelectContent><SelectItem v-for="tunnel in vm.tunnels" :key="tunnel.id" :value="String(tunnel.id)">{{ tunnel.name }}</SelectItem></SelectContent>

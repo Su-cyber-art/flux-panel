@@ -16,9 +16,9 @@ async function copy(value: string) {
 </script>
 <template>
   <Dialog :open="show" @update:open="value => emit('update:show', value)">
-    <DialogContent class="sm:max-w-lg">
+    <DialogContent class="overflow-hidden sm:max-w-lg">
       <DialogHeader><DialogTitle>{{ title }}</DialogTitle><DialogDescription>共 {{ addresses.length }} 个地址，点击右侧按钮复制。</DialogDescription></DialogHeader>
-      <div class="max-h-[50dvh] divide-y overflow-y-auto rounded-lg border">
+      <div class="min-h-0 divide-y overflow-y-auto rounded-lg border">
         <div v-for="address in addresses" :key="address" class="flex items-center gap-3 px-4 py-3">
           <code class="min-w-0 flex-1 break-all text-xs">{{ address }}</code><Button variant="ghost" size="icon" class="size-8" :aria-label="'复制 ' + address" @click="copy(address)"><Copy class="size-3.5" /></Button>
         </div>

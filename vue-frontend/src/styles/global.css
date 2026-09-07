@@ -297,3 +297,18 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Keep legacy card-modal actions outside the scrolling content area. */
+.n-card.panel-scroll-modal {
+  max-height: 90dvh;
+}
+.n-card.panel-scroll-modal > .n-card-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.n-card.panel-scroll-modal > .n-card-header,
+.n-card.panel-scroll-modal > .n-card__footer,
+.n-card.panel-scroll-modal > .n-card__action {
+  flex-shrink: 0;
+}
