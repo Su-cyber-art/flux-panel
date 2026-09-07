@@ -4,11 +4,13 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import ts from 'typescript'
 const code = ts.transpileModule(fs.readFileSync(new URL('../src/utils/captcha.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText
-const { normalizeCaptchaResponse, requestCaptchaJson, manageCaptcha } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
+const { normalizeCaptchaResponse, normalizeCaptchaTrack, requestCaptchaJson, manageCaptcha } = await import('data:text/javascript;base64,' + Buffer.from(code).toString('base64'))
 const originalFetch = globalThis.fetch
 const originalWindow = globalThis.window
 afterEach(() => { globalThis.fetch = originalFetch; globalThis.window = originalWindow })
 const data = { id: 'challenge-id', type: 'SLIDER', backgroundImage: 'data:image/png;base64,fixture', templateImage: 'template', backgroundImageWidth: 600, backgroundImageHeight: 360, data: { randomY: 120 } }
+const verifyFixture = JSON.parse(fs.readFileSync(new URL('../../springboot-backend/src/test/resources/captcha/verify-request.json', import.meta.url), 'utf8'))
+const sdkTrack = () => ({ ...verifyFixture.data, startTime: new Date(verifyFixture.data.startTime), stopTime: new Date(verifyFixture.data.stopTime) })
 const json = value => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
 const tick = () => new Promise(resolve => setImmediate(resolve))
 function fakeSdk() {
@@ -75,14 +77,14 @@ test('verification retains the backend envelope and rejects success without a to
   const { sdk, calls, session } = fakeSdk()
   const captcha = { showTips: (_, __, done) => done() }
   const response = { code: 200, data: { validToken: 'verified-token' } }
-  globalThis.fetch = async (_, request) => { assert.deepEqual(JSON.parse(request.body), { id: 'id', data: { trackList: [] } }); return json(response) }
-  await sdk.config.validCaptcha('id', { trackList: [] }, captcha)
+  globalThis.fetch = async (_, request) => { assert.deepEqual(JSON.parse(request.body), verifyFixture); return json(response) }
+  await sdk.config.validCaptcha(verifyFixture.id, sdkTrack(), captcha)
   assert.deepEqual(calls.success, [response])
   globalThis.fetch = async () => json({ code: 200, data: {} })
-  await sdk.config.validCaptcha('id', {}, captcha)
+  await sdk.config.validCaptcha(verifyFixture.id, sdkTrack(), captcha)
   assert.equal(calls.success.length, 1); assert.equal(calls.errors.length, 1)
   globalThis.fetch = async () => json({ code: 4001, msg: '验证失败' })
-  await sdk.config.validCaptcha('id', {}, captcha)
+  await sdk.config.validCaptcha(verifyFixture.id, sdkTrack(), captcha)
   assert.equal(calls.failure.length, 1)
   session.destroy()
 })
@@ -90,7 +92,27 @@ test('closing before a delayed success callback cannot trigger login', async () 
   const { sdk, calls, session } = fakeSdk()
   let done
   globalThis.fetch = async () => json({ code: 200, data: { validToken: 'verified-token' } })
-  await sdk.config.validCaptcha('id', {}, { showTips: (_, __, callback) => { done = callback } })
+  await sdk.config.validCaptcha(verifyFixture.id, sdkTrack(), { showTips: (_, __, callback) => { done = callback } })
   session.destroy(); done()
   assert.equal(calls.success.length, 0)
+})
+
+
+test('Date timestamps serialize exactly as the Java DTO fixture without mutating SDK data', () => {
+  const track = sdkTrack()
+  const payload = { id: verifyFixture.id, data: normalizeCaptchaTrack(track) }
+  assert.deepEqual(JSON.parse(JSON.stringify(payload)), verifyFixture)
+  assert.ok(track.startTime instanceof Date)
+  assert.ok(track.stopTime instanceof Date)
+  assert.deepEqual(normalizeCaptchaTrack(verifyFixture.data), verifyFixture.data)
+})
+test('invalid or missing timestamps never reach the verification endpoint', async () => {
+  const { sdk, calls, session } = fakeSdk()
+  globalThis.fetch = () => { assert.fail('invalid time must not be submitted') }
+  for (const value of [undefined, new Date(NaN), NaN, Infinity, 1.5, -1, '2024-03-09T16:00:00.000Z']) {
+    await sdk.config.validCaptcha('id', { ...sdkTrack(), startTime: value }, {})
+  }
+  assert.equal(calls.errors.length, 7)
+  assert.equal(calls.success.length, 0)
+  session.destroy()
 })

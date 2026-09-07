@@ -103,8 +103,9 @@ npm run preview        # 本地预览产物
 
 后端 Tianai 1.5.x 生成接口返回 `{ code: 200, data: { id, type, ... } }`，
 旧渲染 SDK 需要 `{ id, captcha: { type, ... } }`。`src/utils/captcha.ts` 负责
-转换生成响应，校验接口仍保留原响应信封及 `data.validToken`，登录仍由后端
-执行二次验证。请求超时、失败、关闭和刷新均由适配层处理。
+转换生成响应，并将 SDK 的 `startTime` / `stopTime` 从 Date 转为 Long 对应的
+毫秒时间戳；不能直接 JSON 序列化成日期字符串。校验接口仍保留原响应信封及
+`data.validToken`，登录仍由后端执行二次验证。请求超时、失败、关闭和刷新均由适配层处理。
 
 随仓库提供的 tac.min.js 仅做三处兼容修补：返回生成 Promise、关闭后延迟
 显示的空值保护、轨迹中模板尺寸字段更正。请求和校验错误处理使用适配层，
@@ -112,3 +113,7 @@ npm run preview        # 本地预览产物
 
 运行 `npm run test:captcha` 检查协议与生命周期；测试使用模拟响应，不绕过
 线上验证码或替代服务端校验。
+
+验证码请求契约由前端测试与后端 `CaptchaVerifyDtoTest` 共用
+`springboot-backend/src/test/resources/captcha/verify-request.json` 验证，覆盖真实
+Tianai 1.5.5 DTO 的时间、尺寸、浮点轨迹字段，以及旧 ISO 日期导致的解析错误。

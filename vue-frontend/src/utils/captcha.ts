@@ -14,6 +14,23 @@ export function normalizeCaptchaResponse(response: any) {
   return { id, captcha }
 }
 
+/** Tianai 1.5.5 uses Long timestamps; JSON.stringify(Date) would send ISO strings. */
+export function normalizeCaptchaTrack(track: unknown) {
+  if (!track || typeof track !== 'object' || Array.isArray(track)) {
+    throw new Error('验证码轨迹数据异常，请重新验证')
+  }
+  const result = { ...(track as Record<string, unknown>) }
+  for (const field of ['startTime', 'stopTime']) {
+    const value = result[field]
+    const timestamp = value instanceof Date ? value.getTime() : value
+    if (typeof timestamp !== 'number' || !Number.isSafeInteger(timestamp) || timestamp < 0) {
+      throw new Error('验证码时间数据异常，请重新验证')
+    }
+    result[field] = timestamp
+  }
+  return result
+}
+
 export async function requestCaptchaJson(url: string, data: unknown, signal: AbortSignal, timeoutMs = 15000) {
   if (signal.aborted) throw new DOMException('Cancelled', 'AbortError')
   const controller = new AbortController()
@@ -62,7 +79,7 @@ export function manageCaptcha(tac: any, onError: (error: unknown) => void) {
     const value = generation
     verifying = true
     try {
-      const response = await requestCaptchaJson(tac.config.validCaptchaUrl, { id, data: track }, controller.signal)
+      const response = await requestCaptchaJson(tac.config.validCaptchaUrl, { id, data: normalizeCaptchaTrack(track) }, controller.signal)
       if (!current(value)) return
       if (Number(response?.code) === 200) {
         if (typeof response?.data?.validToken !== 'string' || !response.data.validToken) {

@@ -1,0 +1,15 @@
+{
+  "id": "contract-fixture",
+  "data": {
+    "bgImageWidth": 300,
+    "bgImageHeight": 180,
+    "templateImageWidth": 60,
+    "templateImageHeight": 180,
+    "startTime": 1710000000000,
+    "stopTime": 1710000001250,
+    "trackList": [
+      { "x": 0, "y": 0, "t": 0, "type": "down" },
+      { "x": 12.5, "y": 0.25, "t": 1250, "type": "up" }
+    ]
+  }
+}
