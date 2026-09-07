@@ -45,6 +45,9 @@ jobs:
           VITE_APP_VERSION: ci
         run: npm run build
 
+      - name: Build frontend image
+        run: docker build --build-arg APP_VERSION=ci --tag flux-panel-frontend:ci ./vue-frontend
+
   backend:
     name: Backend
     runs-on: ubuntu-latest

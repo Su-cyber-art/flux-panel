@@ -7,7 +7,8 @@ ENV VITE_APP_VERSION=${APP_VERSION}
 
 WORKDIR /app
 
-COPY package*.json ./
+# Match the npm options used to generate and validate the lockfile in CI.
+COPY package*.json .npmrc ./
 RUN npm ci
 
 COPY . .

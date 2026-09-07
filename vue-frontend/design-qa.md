@@ -95,4 +95,4 @@ final result: passed
 - Toast 的部分辅助文字可在后续统一本地化（P3）。
 
 本地验收完成后已停止预览服务。复现方式见 README 的 dev:preview 说明。
-本报告记录界面验收结果，发布范围见 docs/releases/1.5.10.md。
+本报告记录界面验收结果，发布范围见 docs/releases/1.5.11.md。
