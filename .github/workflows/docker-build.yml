@@ -129,6 +129,7 @@ jobs:
           npm ci
           npm audit --omit=dev --audit-level=high
           npm run type-check
+          npm run test:captcha
           npm run build
 
       - name: Set up Docker Buildx

@@ -39,6 +39,10 @@ jobs:
         working-directory: vue-frontend
         run: npm run type-check
 
+      - name: Captcha protocol regression
+        working-directory: vue-frontend
+        run: npm run test:captcha
+
       - name: Build
         working-directory: vue-frontend
         env:

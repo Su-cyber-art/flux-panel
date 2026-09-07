@@ -90,10 +90,25 @@ npm run preview        # 本地预览产物
 - 响应信封 `{ code, msg, data }`，`code === 0` 为成功；请求头 `Authorization` 直接携带原始 token（无 `Bearer` 前缀）。
 - token 失效（401 + 指定 msg）自动清理并跳转登录页。
 - 节点实时遥测通过 `/system-info?type=0&secret=<token>` 的 WebSocket，前端只读展示。
-- 登录验证码沿用 tianai-captcha（`utils/tac.min.js` + `utils/tac.css`，逐字沿用，框架无关）。
+- 登录验证码沿用 tianai-captcha（`utils/tac.min.js` + `utils/tac.css`，由 `utils/captcha.ts` 适配 1.5.x 响应格式与请求生命周期）。
 
 ## 相比原前端的增强
 
 - 中性黑白主题、按职责拆分的转发列表与表单，以及一致的操作菜单。
 - 明暗主题：跟随系统 + 顶栏一键切换（原版仅跟随系统）。
 - 诊断结果弹窗（`DiagnosisDialog`）配合后端“真实链路诊断”，按 **入口监听 / 逐跳建连 / 目标可达 / 端到端数据回环** 分类展示真实延迟、抖动、丢包与字节级完整性校验结果。
+
+
+## 验证码兼容与回归
+
+后端 Tianai 1.5.x 生成接口返回 `{ code: 200, data: { id, type, ... } }`，
+旧渲染 SDK 需要 `{ id, captcha: { type, ... } }`。`src/utils/captcha.ts` 负责
+转换生成响应，校验接口仍保留原响应信封及 `data.validToken`，登录仍由后端
+执行二次验证。请求超时、失败、关闭和刷新均由适配层处理。
+
+随仓库提供的 tac.min.js 仅做三处兼容修补：返回生成 Promise、关闭后延迟
+显示的空值保护、轨迹中模板尺寸字段更正。请求和校验错误处理使用适配层，
+避免 SDK 原异常分支引用未定义变量而卡住。
+
+运行 `npm run test:captcha` 检查协议与生命周期；测试使用模拟响应，不绕过
+线上验证码或替代服务端校验。

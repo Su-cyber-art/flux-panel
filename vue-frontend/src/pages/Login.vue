@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const isUiPreview = import.meta.env.DEV && import.meta.env.VITE_UI_PREVIEW === 'true'
-import { reactive, ref, computed, onUnmounted } from 'vue'
+import { reactive, ref, computed, nextTick, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NInput, NButton } from 'naive-ui'
 import Logo from '@/components/Logo.vue'
@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConfigStore } from '@/stores/config'
 import { login, checkCaptcha } from '@/api'
 import { getBaseURL } from '@/api/http'
+import { manageCaptcha } from '@/utils/captcha'
 import { isWebViewFunc } from '@/utils/panel'
 import bgImage from '@/assets/bg.jpg'
 
@@ -27,7 +28,23 @@ const errors = reactive<{ username?: string; password?: string }>({})
 const loading = ref(false)
 const showCaptcha = ref(false)
 const captchaContainer = ref<HTMLElement | null>(null)
-let tacInstance: any = null
+let captchaSession: ReturnType<typeof manageCaptcha> | null = null
+let disposed = false
+
+function closeCaptcha() {
+  captchaSession?.destroy()
+  captchaSession = null
+  showCaptcha.value = false
+  form.captchaId = ''
+}
+
+function captchaError(error: unknown) {
+  if (disposed) return
+  console.error('验证码请求失败:', error)
+  closeCaptcha()
+  loading.value = false
+  toast.error(error instanceof Error ? error.message : '验证码加载失败，请重试')
+}
 
 const isWebView = isWebViewFunc()
 const buttonLabel = computed(() =>
@@ -68,12 +85,10 @@ function onPassword(value: string) {
 
 // 初始化验证码
 async function initCaptcha() {
-  if (!window.TAC || !captchaContainer.value) return
+  if (disposed) return
   try {
-    if (tacInstance) {
-      tacInstance.destroyWindow()
-      tacInstance = null
-    }
+    if (!window.TAC || !captchaContainer.value) throw new Error('验证码组件未加载，请刷新页面重试')
+    captchaSession?.destroy()
 
     // 使用 axios 的 baseURL，确保在 WebView 中使用正确的面板地址
     const baseURL = getBaseURL()
@@ -82,22 +97,20 @@ async function initCaptcha() {
       requestCaptchaDataUrl: `${baseURL}captcha/generate`,
       validCaptchaUrl: `${baseURL}captcha/verify`,
       bindEl: '#captcha-container',
-      validSuccess: (res: any, _c: any, tac: any) => {
+      validSuccess: (res: any) => {
+        closeCaptcha()
         form.captchaId = res.data.validToken
-        showCaptcha.value = false
-        tac.destroyWindow()
-        performLogin()
+        void performLogin()
       },
-      validFail: (_res: any, _c: any, tac: any) => {
-        tac.reloadCaptcha()
+      validFail: () => {
+        captchaSession?.reload()
       },
-      btnCloseFun: (_event: any, tac: any) => {
-        showCaptcha.value = false
-        tac.destroyWindow()
+      btnCloseFun: () => {
+        closeCaptcha()
         loading.value = false
       },
-      btnRefreshFun: (_event: any, tac: any) => {
-        tac.reloadCaptcha()
+      btnRefreshFun: () => {
+        captchaSession?.reload()
       },
     }
 
@@ -112,13 +125,11 @@ async function initCaptcha() {
       moveTrackMaskBorderColor: trackColor,
     }
 
-    tacInstance = new window.TAC(captchaConfig, style)
-    tacInstance.init()
+    const tac = new window.TAC(captchaConfig, style)
+    captchaSession = manageCaptcha(tac, captchaError)
+    captchaSession.init()
   } catch (error) {
-    console.error('初始化验证码失败:', error)
-    toast.error('验证码初始化失败，请刷新页面重试')
-    showCaptcha.value = false
-    loading.value = false
+    captchaError(error)
   }
 }
 
@@ -151,18 +162,21 @@ async function performLogin() {
     console.error('登录错误:', error)
     toast.error('网络错误，请稍后重试')
   } finally {
+    form.captchaId = ''
     loading.value = false
   }
 }
 
 // 提交登录（先检查是否需要验证码）
 async function handleLogin() {
-  if (loading.value && !showCaptcha.value) return
+  if (loading.value || disposed) return
   if (!validateForm()) return
 
   loading.value = true
   try {
+    form.captchaId = ''
     const checkResponse = await checkCaptcha()
+    if (disposed) return
 
     if (checkResponse.code !== 0) {
       toast.error('检查验证码状态失败，请重试' + checkResponse.msg)
@@ -174,11 +188,10 @@ async function handleLogin() {
       // 无需验证码，直接登录
       await performLogin()
     } else {
-      // 需要验证码，展示弹层，延时初始化以确保容器已挂载
+      // 等待 Vue 挂载容器后初始化，避免定时器在离开页面后仍执行
       showCaptcha.value = true
-      setTimeout(() => {
-        initCaptcha()
-      }, 100)
+      await nextTick()
+      await initCaptcha()
     }
   } catch (error) {
     console.error('检查验证码状态错误:', error)
@@ -192,10 +205,8 @@ function onEnter() {
 }
 
 onUnmounted(() => {
-  if (tacInstance) {
-    tacInstance.destroyWindow()
-    tacInstance = null
-  }
+  disposed = true
+  closeCaptcha()
 })
 </script>
 
