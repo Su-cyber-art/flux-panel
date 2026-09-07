@@ -14,10 +14,10 @@ function milliseconds(value?: number) { return value == null || value < 0 ? '—
 </script>
 <template>
   <Dialog :open="show" @update:open="value => emit('update:show', value)">
-    <DialogContent class="max-h-[90dvh] gap-0 overflow-hidden p-0 sm:max-w-[640px]">
-      <DialogHeader class="border-b p-6"><DialogTitle class="flex items-center gap-2"><Activity class="size-4" />{{ title || '连接诊断' }}</DialogTitle><DialogDescription>{{ subtitle || typeLabel || '检查节点连接与数据回环' }}</DialogDescription></DialogHeader>
-      <div v-if="loading" class="flex flex-col items-center gap-3 px-6 py-16"><LoaderCircle class="size-6 animate-spin text-muted-foreground" /><p class="text-sm">正在检查连接…</p><p class="text-xs text-muted-foreground">逐跳建连与回环校验可能需要一些时间。</p></div>
-      <div v-else class="max-h-[65dvh] overflow-y-auto px-6 py-4">
+    <DialogContent class="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[640px]">
+      <DialogHeader class="shrink-0 border-b p-6"><DialogTitle class="flex items-center gap-2"><Activity class="size-4" />{{ title || '连接诊断' }}</DialogTitle><DialogDescription>{{ subtitle || typeLabel || '检查节点连接与数据回环' }}</DialogDescription></DialogHeader>
+      <div v-if="loading" class="flex min-h-0 flex-col items-center gap-3 overflow-y-auto px-6 py-16"><LoaderCircle class="size-6 animate-spin text-muted-foreground" /><p class="text-sm">正在检查连接…</p><p class="text-xs text-muted-foreground">逐跳建连与回环校验可能需要一些时间。</p></div>
+      <div v-else class="min-h-0 overflow-y-auto px-6 py-4">
         <div class="mb-4 flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground"><Info class="mt-0.5 size-3.5 shrink-0" />当前检查使用 TCP，不能据此确认 UDP 是否畅通。</div>
         <div v-if="report?.truncated" class="mb-4 rounded-lg border border-amber-300/50 px-3 py-2.5 text-xs text-amber-600">诊断达到时间上限，部分检查未执行，可稍后重试。</div>
         <div v-if="results.length" class="mb-1 flex items-center justify-between py-1"><span class="text-sm font-medium">检查结果</span><Badge variant="outline">{{ passed }} / {{ results.length }} 通过</Badge></div>
@@ -39,7 +39,7 @@ function milliseconds(value?: number) { return value == null || value < 0 ? '—
         </div>
         <p v-if="!results.length" class="py-12 text-center text-sm text-muted-foreground">暂无诊断结果。</p>
       </div>
-      <DialogFooter class="border-t px-6 py-4"><Button variant="outline" @click="emit('update:show', false)">关闭</Button><Button :disabled="loading" @click="emit('retry')"><RefreshCw class="size-4" :class="{ 'animate-spin': loading }" />重新检查</Button></DialogFooter>
+      <DialogFooter class="shrink-0 border-t px-6 py-4"><Button variant="outline" @click="emit('update:show', false)">关闭</Button><Button :disabled="loading" @click="emit('retry')"><RefreshCw class="size-4" :class="{ 'animate-spin': loading }" />重新检查</Button></DialogFooter>
     </DialogContent>
   </Dialog>
 </template>
