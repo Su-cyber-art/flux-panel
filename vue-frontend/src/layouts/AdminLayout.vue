@@ -1,285 +1,81 @@
 <script setup lang="ts">
-import { computed, ref, h } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NIcon, NDropdown, NAvatar } from 'naive-ui'
-import { MenuOutline, ChevronDownOutline, LogOutOutline, KeyOutline, CloseOutline } from '@vicons/ionicons5'
-import Logo from '@/components/Logo.vue'
-import ThemeToggle from '@/components/ThemeToggle.vue'
+import { BookOpen, Check, ChevronDown, ChevronRight, Command, ExternalLink, KeyRound, LogOut, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Sun, UserRound } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import SidebarNavigation from './SidebarNavigation.vue'
 import ChangePasswordModal from '@/components/ChangePasswordModal.vue'
-import { menuItems } from '@/config/menu'
 import { useAuthStore } from '@/stores/auth'
 import { useConfigStore } from '@/stores/config'
-import { safeLogout } from '@/utils/logout'
-
-const route = useRoute()
-const router = useRouter()
+import { useTheme } from '@/composables/useTheme'
 const auth = useAuthStore()
 const config = useConfigStore()
-
+const route = useRoute()
+const router = useRouter()
+const { isDark, mode, setMode } = useTheme()
+const isPreview = import.meta.env.DEV && import.meta.env.VITE_UI_PREVIEW === 'true'
+const compact = ref(localStorage.getItem('sidebar-compact') === 'true')
 const drawerOpen = ref(false)
-const pwdModal = ref(false)
-
-const visibleMenu = computed(() => menuItems.filter((m) => !m.adminOnly || auth.isAdmin))
-const currentTitle = computed(() => (route.meta.title as string) || config.name)
-
-const userMenuOptions = [
-  { label: '修改密码', key: 'pwd', icon: () => iconRender(KeyOutline) },
-  { label: '退出登录', key: 'logout', icon: () => iconRender(LogOutOutline) },
-]
-
-function iconRender(cmp: any) {
-  return h(NIcon, { component: cmp })
-}
-
-function onUserMenu(key: string) {
-  if (key === 'pwd') pwdModal.value = true
-  else if (key === 'logout') {
-    safeLogout()
-    auth.logout()
-    router.push('/')
-  }
-}
-
-function navigate(path: string) {
-  drawerOpen.value = false
-  if (route.path !== path) router.push(path)
-}
+const passwordOpen = ref(false)
+const pageTitle = computed(() => String(route.meta.title || '控制台'))
+const brand = computed(() => /^(flux|flux-panel)$/i.test(config.name) ? 'flux' : config.name)
+const version = computed(() => config.version === 'dev' ? '' : 'v' + config.version)
+function toggleSidebar() { compact.value = !compact.value; localStorage.setItem('sidebar-compact', String(compact.value)) }
+function logout() { auth.logout(); router.push('/') }
 </script>
 
 <template>
-  <div class="admin-shell">
-    <!-- 侧边栏 -->
-    <aside class="sidebar" :class="{ open: drawerOpen }">
-      <div class="brand">
-        <Logo :size="26" />
-        <div class="brand-text">
-          <span class="brand-name">{{ config.name }}</span>
-          <span class="brand-ver">v{{ config.version }}</span>
-        </div>
-        <NButton class="drawer-close" quaternary circle size="small" @click="drawerOpen = false">
-          <template #icon><NIcon :component="CloseOutline" /></template>
-        </NButton>
-      </div>
-
-      <nav class="menu">
-        <a
-          v-for="item in visibleMenu"
-          :key="item.path"
-          class="menu-item"
-          :class="{ active: route.path === item.path }"
-          @click="navigate(item.path)"
-        >
-          <NIcon :component="item.icon" :size="19" />
-          <span>{{ item.label }}</span>
-        </a>
-      </nav>
-
-      <div class="side-footer">
-        <a href="https://github.com/Su-cyber-art/flux-panel" target="_blank" rel="noopener noreferrer">
-          Powered by flux-panel
-        </a>
+  <div class="min-h-dvh bg-background text-foreground">
+    <aside class="fixed inset-y-0 left-0 z-30 hidden flex-col border-r bg-sidebar transition-[width] duration-200 lg:flex" :class="compact ? 'w-[72px]' : 'w-[232px]'">
+      <RouterLink to="/dashboard" class="flex h-[72px] shrink-0 items-center gap-2.5 px-5" :aria-label="brand + '首页'">
+        <div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background"><Command class="size-[19px]" /></div>
+        <span v-if="!compact" class="truncate text-[17px] font-semibold tracking-tight">{{ brand }}<span v-if="brand === 'flux'" class="ml-1 font-normal text-muted-foreground">panel</span></span>
+      </RouterLink>
+      <div class="min-h-0 flex-1 overflow-y-auto px-3 py-3"><SidebarNavigation :compact="compact" /></div>
+      <div class="space-y-3 p-3">
+        <a v-if="!compact" href="https://github.com/Su-cyber-art/flux-panel" target="_blank" rel="noopener noreferrer" class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"><BookOpen class="size-4" />帮助与文档<ExternalLink class="ml-auto size-3" /></a>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="flex w-full items-center gap-2.5 rounded-lg border bg-background/70 p-2 text-left hover:bg-accent" :class="compact ? 'justify-center border-transparent' : ''" aria-label="账户菜单">
+              <span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold">{{ (auth.name || 'A').slice(0, 1).toUpperCase() }}</span>
+              <span v-if="!compact" class="min-w-0 flex-1"><span class="block truncate text-xs font-medium">{{ auth.name }}</span><span class="mt-0.5 block text-[11px] text-muted-foreground">{{ auth.isAdmin ? '管理员' : '成员' }}</span></span>
+              <ChevronDown v-if="!compact" class="size-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="end" class="w-48">
+            <DropdownMenuLabel>{{ auth.name }}</DropdownMenuLabel><DropdownMenuSeparator />
+            <DropdownMenuItem @select="router.push('/profile')"><UserRound class="size-4" />我的账户</DropdownMenuItem>
+            <DropdownMenuItem @select="passwordOpen = true"><KeyRound class="size-4" />修改密码</DropdownMenuItem>
+            <DropdownMenuSeparator /><DropdownMenuItem @select="logout"><LogOut class="size-4" />退出登录</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <p v-if="!compact && version" class="px-3 text-[10px] text-muted-foreground/65">Flux Panel <span class="float-right">{{ version }}</span></p>
       </div>
     </aside>
 
-    <div v-if="drawerOpen" class="backdrop" @click="drawerOpen = false" />
-
-    <!-- 主区域 -->
-    <div class="main">
-      <header class="topbar">
-        <NButton class="hamburger" quaternary circle @click="drawerOpen = true">
-          <template #icon><NIcon :component="MenuOutline" :size="20" /></template>
-        </NButton>
-        <div class="page-title">{{ currentTitle }}</div>
-        <div class="topbar-actions">
-          <ThemeToggle />
-          <NDropdown trigger="click" :options="userMenuOptions" @select="onUserMenu" placement="bottom-end">
-            <div class="user-chip">
-              <NAvatar round size="small" :style="{ background: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' }">
-                {{ (auth.name || 'A').charAt(0).toUpperCase() }}
-              </NAvatar>
-              <span class="user-name">{{ auth.name }}</span>
-              <NIcon :component="ChevronDownOutline" :size="14" />
-            </div>
-          </NDropdown>
+    <div class="min-w-0 transition-[padding] duration-200" :class="compact ? 'lg:pl-[72px]' : 'lg:pl-[232px]'">
+      <header class="sticky top-0 z-20 flex h-[60px] items-center gap-3 border-b bg-background/95 px-4 backdrop-blur-sm sm:px-6">
+        <Button variant="ghost" size="icon" class="hidden size-8 text-muted-foreground lg:inline-flex" :aria-label="compact ? '展开侧栏' : '收起侧栏'" @click="toggleSidebar"><PanelLeftOpen v-if="compact" class="size-4" /><PanelLeftClose v-else class="size-4" /></Button>
+        <Button variant="ghost" size="icon" class="size-8 lg:hidden" aria-label="打开导航" @click="drawerOpen = true"><Menu class="size-5" /></Button>
+        <div class="mr-1 hidden h-4 border-l lg:block" />
+        <div class="flex min-w-0 items-center gap-2 text-xs"><span class="hidden text-muted-foreground sm:inline">控制台</span><ChevronRight class="hidden size-3 text-muted-foreground/60 sm:block" /><span class="truncate font-medium">{{ pageTitle }}</span></div>
+        <div class="ml-auto flex items-center gap-2"><span v-if="isPreview" class="mr-1 rounded-md border px-2 py-1 text-[10px] text-muted-foreground">预览数据</span>
+          <DropdownMenu><DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="size-8 text-muted-foreground" aria-label="切换外观"><Moon v-if="isDark" class="size-4" /><Sun v-else class="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end" class="w-36"><DropdownMenuItem @select="setMode('light')"><Sun class="size-4" />浅色<Check v-if="mode === 'light'" class="ml-auto size-3" /></DropdownMenuItem><DropdownMenuItem @select="setMode('dark')"><Moon class="size-4" />深色<Check v-if="mode === 'dark'" class="ml-auto size-3" /></DropdownMenuItem><DropdownMenuItem @select="setMode('auto')"><Monitor class="size-4" />跟随系统<Check v-if="mode === 'auto'" class="ml-auto size-3" /></DropdownMenuItem></DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="ghost" size="icon" class="size-8 lg:hidden" aria-label="我的账户" @click="router.push('/profile')"><UserRound class="size-4" /></Button>
         </div>
       </header>
-
-      <main class="content">
-        <slot />
-      </main>
+      <main class="min-h-[calc(100dvh-60px)]"><slot /></main>
     </div>
 
-    <ChangePasswordModal v-model:show="pwdModal" />
+    <Sheet v-model:open="drawerOpen"><SheetContent side="left" class="gap-0 bg-sidebar p-0 data-[side=left]:w-[280px] data-[side=left]:sm:max-w-[280px]">
+      <SheetHeader class="border-b p-6"><SheetTitle class="flex items-center gap-2 text-lg"><Command class="size-5" />{{ brand }}{{ brand === 'flux' ? ' panel' : '' }}</SheetTitle><SheetDescription>转发与网络管理</SheetDescription></SheetHeader>
+      <div class="flex-1 overflow-y-auto p-4"><SidebarNavigation @navigate="drawerOpen = false" /></div>
+      <div class="border-t p-4"><Button variant="ghost" class="w-full justify-start" @click="logout"><LogOut class="size-4" />退出登录</Button></div>
+    </SheetContent></Sheet>
+    <ChangePasswordModal v-model:show="passwordOpen" />
   </div>
 </template>
-
-<style scoped>
-.admin-shell {
-  display: flex;
-  min-height: 100vh;
-}
-.sidebar {
-  width: 260px;
-  flex-shrink: 0;
-  background: var(--bg-elevated);
-  border-right: 1px solid var(--border-soft);
-  display: flex;
-  flex-direction: column;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  z-index: 50;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--border-soft);
-}
-.brand-text {
-  display: flex;
-  flex-direction: column;
-  line-height: 1.15;
-}
-.brand-name {
-  font-weight: 700;
-  font-size: 16px;
-}
-.brand-ver {
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.drawer-close {
-  display: none;
-  margin-left: auto;
-}
-.menu {
-  flex: 1;
-  padding: 14px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  overflow-y: auto;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 14px;
-  border-radius: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-weight: 500;
-  transition: background 0.18s ease, color 0.18s ease;
-  min-height: 44px;
-}
-.menu-item:hover {
-  background: var(--bg-subtle);
-  color: var(--text-primary);
-}
-.menu-item.active {
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.14), rgba(37, 99, 235, 0.06));
-  color: var(--brand-500);
-  font-weight: 600;
-}
-.side-footer {
-  padding: 14px 20px;
-  border-top: 1px solid var(--border-soft);
-  font-size: 12px;
-}
-.side-footer a {
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-.side-footer a:hover {
-  color: var(--brand-500);
-}
-.backdrop {
-  display: none;
-}
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-.topbar {
-  height: 60px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 20px;
-  background: color-mix(in srgb, var(--bg-elevated) 82%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-soft);
-  position: sticky;
-  top: 0;
-  z-index: 20;
-}
-.hamburger {
-  display: none;
-}
-.page-title {
-  font-size: 17px;
-  font-weight: 600;
-}
-.topbar-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.user-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 10px 5px 5px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 0.18s ease;
-}
-.user-chip:hover {
-  background: var(--bg-subtle);
-}
-.user-name {
-  font-size: 14px;
-  font-weight: 500;
-}
-.content {
-  flex: 1;
-  overflow-y: auto;
-  background: var(--bg-body);
-}
-@media (max-width: 900px) {
-  .sidebar {
-    position: fixed;
-    left: 0;
-    transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.2);
-  }
-  .sidebar.open {
-    transform: translateX(0);
-  }
-  .drawer-close {
-    display: inline-flex;
-  }
-  .backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 6, 23, 0.4);
-    backdrop-filter: blur(2px);
-    z-index: 40;
-  }
-  .hamburger {
-    display: inline-flex;
-  }
-  .main {
-    height: 100vh;
-  }
-}
-</style>

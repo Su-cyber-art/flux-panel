@@ -3,6 +3,12 @@
 技术栈：Vue 3 `<script setup lang="ts">` + Naive UI + Pinia + vue-router + ECharts(vue-echarts)。
 构建用 esbuild 转译（`vite build`），不强制类型门禁，但请写出类型正确、可编译的代码。
 
+
+> 当前迁移约定：新增或重构的界面优先使用 `@/components/ui/*`（shadcn-vue），
+> 不再增加 Naive UI 控件。已有页面保留 Naive UI 过渡。消息仍统一使用
+> `useToast()`；其底层为 vue-sonner，无需 NMessageProvider。转发页已完成样板迁移，
+> 业务接口、原始 Authorization token 和 WebView 地址桥保持兼容。
+
 ## 别名
 `@` → `src`。所有内部导入用 `@/...`。
 

@@ -10,21 +10,34 @@
     "dev": "vite",
     "build": "vite build",
     "type-check": "vue-tsc --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:preview": "node scripts/ui-preview.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@lucide/vue": "^1.41.0",
+    "@vueuse/core": "^14.4.0",
     "axios": "^1.7.9",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "echarts": "^6.1.0",
     "naive-ui": "^2.40.1",
     "pinia": "^2.2.6",
+    "reka-ui": "^2.10.4",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0",
     "vue": "^3.5.13",
     "vue-echarts": "^8.0.1",
-    "vue-router": "^4.4.5"
+    "vue-router": "^4.4.5",
+    "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
     "@vicons/ionicons5": "^0.13.0",
     "@vitejs/plugin-vue": "^6.0.8",
+    "shadcn-vue": "^2.8.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "~5.6.3",
     "vfonts": "^0.0.3",
     "vite": "^8.1.5",

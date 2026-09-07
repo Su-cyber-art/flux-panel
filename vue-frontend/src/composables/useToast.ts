@@ -1,17 +1,12 @@
-import { useMessage } from 'naive-ui'
+import { toast } from 'vue-sonner'
 
-/**
- * 统一的轻提示封装，语义与旧版 react-hot-toast 对齐。
- * 必须在组件 setup 中调用（位于 NMessageProvider 之内）。
- */
 export function useToast() {
-  const message = useMessage()
   return {
-    success: (content: string) => message.success(content, { duration: 2000 }),
-    error: (content: string) => message.error(content, { duration: 2500 }),
-    info: (content: string) => message.info(content, { duration: 2000 }),
-    warning: (content: string) => message.warning(content, { duration: 3000 }),
-    loading: (content: string) => message.loading(content, { duration: 0 }),
-    raw: message,
+    success: (content: string) => toast.success(content, { duration: 2500 }),
+    error: (content: string) => toast.error(content, { duration: 3500 }),
+    info: (content: string) => toast.info(content, { duration: 2500 }),
+    warning: (content: string) => toast.warning(content, { duration: 3500 }),
+    loading: (content: string) => toast.loading(content),
+    raw: toast,
   }
 }

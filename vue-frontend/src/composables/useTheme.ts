@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { darkTheme, type GlobalTheme } from 'naive-ui'
 
 export type ThemeMode = 'auto' | 'light' | 'dark'
@@ -26,6 +26,8 @@ function applyHtmlClass() {
   document.documentElement.classList.toggle('dark', isDark.value)
   document.documentElement.style.colorScheme = isDark.value ? 'dark' : 'light'
 }
+
+watch([mode, systemDark], applyHtmlClass, { immediate: true })
 
 /** 全局主题 composable，供 App 提供 Naive 的 theme，供 header 提供切换按钮 */
 export function useTheme() {

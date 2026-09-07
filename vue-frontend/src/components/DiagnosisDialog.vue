@@ -1,232 +1,45 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  NModal,
-  NCard,
-  NButton,
-  NSpin,
-  NTag,
-  NEmpty,
-  NAlert,
-  NProgress,
-} from 'naive-ui'
-import type { DiagnosisReport, DiagnosisResultItem } from '@/types'
-
-const props = defineProps<{
-  show: boolean
-  loading: boolean
-  report: DiagnosisReport | null
-  title?: string
-  subtitle?: string
-  typeLabel?: string
-}>()
-
-const emit = defineEmits<{
-  (e: 'update:show', v: boolean): void
-  (e: 'retry'): void
-}>()
-
-const categoryMeta: Record<string, { label: string; color: 'default' | 'info' | 'success' | 'warning' }> = {
-  LISTENER: { label: '入口监听', color: 'info' },
-  HOP: { label: '逐跳建连', color: 'default' },
-  TARGET: { label: '目标可达', color: 'default' },
-  LOOPBACK: { label: '数据回环', color: 'success' },
-}
-
-const results = computed<DiagnosisResultItem[]>(() => props.report?.results ?? [])
-const summary = computed(() => {
-  const r = results.value
-  const passed = r.filter((x) => x.success).length
-  return props.report?.summary ?? { total: r.length, passed, failed: r.length - passed }
-})
-
-function quality(avg?: number, loss?: number): { text: string; type: 'success' | 'info' | 'warning' | 'error' } | null {
-  if (avg == null || loss == null || avg < 0) return null
-  if (avg < 30 && loss === 0) return { text: '🚀 优秀', type: 'success' }
-  if (avg < 50 && loss === 0) return { text: '✨ 很好', type: 'success' }
-  if (avg < 100 && loss < 1) return { text: '👍 良好', type: 'info' }
-  if (avg < 150 && loss < 2) return { text: '😐 一般', type: 'warning' }
-  if (avg < 200 && loss < 5) return { text: '😟 较差', type: 'warning' }
-  return { text: '😵 很差', type: 'error' }
-}
-
-function fmtMs(v?: number): string {
-  if (v == null || v < 0) return '-'
-  return v.toFixed(v < 10 ? 2 : 0)
-}
-function fmtBytes(v?: number): string {
-  if (!v) return '-'
-  if (v < 1024) return `${v} B`
-  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`
-  return `${(v / 1024 / 1024).toFixed(2)} MB`
-}
+import { Activity, Check, CircleAlert, CircleCheck, Info, LoaderCircle, RefreshCw, X } from '@lucide/vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import type { DiagnosisReport } from '@/types'
+const props = defineProps<{ show: boolean; loading: boolean; report: DiagnosisReport | null; title?: string; subtitle?: string; typeLabel?: string }>()
+const emit = defineEmits<{ (e: 'update:show', value: boolean): void; (e: 'retry'): void }>()
+const results = computed(() => props.report?.results ?? [])
+const passed = computed(() => results.value.filter(result => result.success).length)
+const categories: Record<string, string> = { LISTENER: '入口监听', HOP: '逐跳建连', TARGET: '目标可达', LOOPBACK: '数据回环' }
+function milliseconds(value?: number) { return value == null || value < 0 ? '—' : value.toFixed(value < 10 ? 2 : 1) }
 </script>
-
 <template>
-  <NModal
-    :show="show"
-    preset="card"
-    style="width: 680px; max-width: 94vw"
-    :title="title || '诊断结果'"
-    :bordered="false"
-    @update:show="(v: boolean) => emit('update:show', v)"
-  >
-    <template #header-extra>
-      <NTag v-if="typeLabel" type="primary" size="small" round>{{ typeLabel }}</NTag>
-    </template>
-
-    <div v-if="subtitle" class="text-secondary" style="margin: -6px 0 12px; font-size: 13px">
-      {{ subtitle }}
-    </div>
-
-    <div v-if="loading" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:52px 0">
-      <NSpin size="large" />
-      <span class="text-secondary">正在进行真实链路诊断...</span>
-      <span class="text-secondary" style="font-size:12px">逐跳建连 · 端到端数据回环校验，请稍候</span>
-    </div>
-
-    <template v-else>
-      <div
-        v-if="results.length"
-        style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap"
-      >
-        <NTag :type="summary.failed === 0 ? 'success' : 'warning'" round size="small">
-          通过 {{ summary.passed }} / {{ summary.total }}
-        </NTag>
-        <NTag v-if="summary.failed > 0" type="error" round size="small">失败 {{ summary.failed }}</NTag>
-        <div style="flex:1;min-width:120px">
-          <NProgress
-            type="line"
-            :height="6"
-            :show-indicator="false"
-            :percentage="summary.total ? Math.round((summary.passed / summary.total) * 100) : 0"
-            :status="summary.failed === 0 ? 'success' : 'warning'"
-          />
+  <Dialog :open="show" @update:open="value => emit('update:show', value)">
+    <DialogContent class="max-h-[90dvh] gap-0 overflow-hidden p-0 sm:max-w-[640px]">
+      <DialogHeader class="border-b p-6"><DialogTitle class="flex items-center gap-2"><Activity class="size-4" />{{ title || '连接诊断' }}</DialogTitle><DialogDescription>{{ subtitle || typeLabel || '检查节点连接与数据回环' }}</DialogDescription></DialogHeader>
+      <div v-if="loading" class="flex flex-col items-center gap-3 px-6 py-16"><LoaderCircle class="size-6 animate-spin text-muted-foreground" /><p class="text-sm">正在检查连接…</p><p class="text-xs text-muted-foreground">逐跳建连与回环校验可能需要一些时间。</p></div>
+      <div v-else class="max-h-[65dvh] overflow-y-auto px-6 py-4">
+        <div class="mb-4 flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground"><Info class="mt-0.5 size-3.5 shrink-0" />当前检查使用 TCP，不能据此确认 UDP 是否畅通。</div>
+        <div v-if="report?.truncated" class="mb-4 rounded-lg border border-amber-300/50 px-3 py-2.5 text-xs text-amber-600">诊断达到时间上限，部分检查未执行，可稍后重试。</div>
+        <div v-if="results.length" class="mb-1 flex items-center justify-between py-1"><span class="text-sm font-medium">检查结果</span><Badge variant="outline">{{ passed }} / {{ results.length }} 通过</Badge></div>
+        <div v-for="(result, index) in results" :key="index" class="border-b py-4 last:border-0">
+          <div class="flex items-start gap-3">
+            <CircleCheck v-if="result.success" class="mt-0.5 size-[18px] shrink-0 text-emerald-600 dark:text-emerald-400" /><CircleAlert v-else class="mt-0.5 size-[18px] shrink-0 text-destructive" />
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2"><span class="text-sm font-medium">{{ result.description }}</span><span class="text-[11px] text-muted-foreground">{{ categories[result.category || ''] || result.category }}</span></div>
+              <p class="mt-1.5 break-all font-mono text-[11px] text-muted-foreground">{{ result.nodeName || '节点' }}<template v-if="result.targetIp"> · {{ result.targetIp }}<template v-if="result.targetPort">:{{ result.targetPort }}</template></template></p>
+              <p v-if="!result.success" class="mt-2 text-xs text-destructive">{{ result.message || '检查未通过' }}</p>
+              <div v-else class="mt-3 grid grid-cols-3 gap-4">
+                <div><div class="text-sm font-medium tabular-nums">{{ milliseconds(result.averageTime) }} <span class="text-[10px] font-normal text-muted-foreground">ms</span></div><span class="text-[11px] text-muted-foreground">平均延迟</span></div>
+                <div><div class="text-sm font-medium tabular-nums">{{ milliseconds(result.jitter) }} <span class="text-[10px] font-normal text-muted-foreground">ms</span></div><span class="text-[11px] text-muted-foreground">抖动</span></div>
+                <div><div class="text-sm font-medium tabular-nums">{{ result.packetLoss == null ? '—' : result.packetLoss.toFixed(1) }}<span class="text-[10px] font-normal text-muted-foreground"> %</span></div><span class="text-[11px] text-muted-foreground">探测丢包</span></div>
+              </div>
+              <p v-if="result.success && result.category === 'LOOPBACK'" class="mt-3 flex items-center gap-1 text-[11px] text-muted-foreground"><Check class="size-3" />{{ result.integrityOk ? '数据完整' : '完整性检查未通过' }} · {{ result.bytesVerified || 0 }} 字节 · {{ result.okRounds || 0 }}/{{ result.rounds || 0 }} 轮</p>
+            </div>
+          </div>
         </div>
+        <p v-if="!results.length" class="py-12 text-center text-sm text-muted-foreground">暂无诊断结果。</p>
       </div>
-
-      <NAlert
-        v-if="report?.truncated"
-        type="warning"
-        :bordered="false"
-        style="margin-bottom:12px"
-        title="诊断被截断"
-      >
-        整轮诊断已达时长上限，部分检查未执行。可稍后重试，或先修复上面已暴露的问题。
-      </NAlert>
-
-      <div style="display:flex;flex-direction:column;gap:12px;max-height:56vh;overflow-y:auto;padding-right:4px">
-        <NCard
-          v-for="(r, i) in results"
-          :key="i"
-          size="small"
-          :bordered="true"
-          :style="{
-            borderColor: r.success ? 'rgba(24,160,88,.4)' : 'rgba(224,65,65,.45)',
-            borderLeftWidth: '3px',
-          }"
-        >
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-            <div style="min-width:0">
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <NTag
-                  v-if="r.category && categoryMeta[r.category]"
-                  size="tiny"
-                  :type="categoryMeta[r.category].color"
-                  round
-                >
-                  {{ categoryMeta[r.category].label }}
-                </NTag>
-                <span style="font-weight:600">{{ r.description }}</span>
-              </div>
-              <div class="text-secondary" style="font-size:12px;margin-top:3px">
-                节点: {{ r.nodeName || '-' }}
-                <template v-if="r.targetIp">
-                  · 目标: <span class="fx-mono">{{ r.targetIp }}{{ r.targetPort ? ':' + r.targetPort : '' }}</span>
-                </template>
-              </div>
-            </div>
-            <NTag :type="r.success ? 'success' : 'error'" size="small" round>
-              {{ r.success ? '通过' : '失败' }}
-            </NTag>
-          </div>
-
-          <div
-            v-if="r.success"
-            style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px"
-          >
-            <div class="fx-metric">
-              <div class="fx-metric-v">{{ fmtMs(r.averageTime) }}</div>
-              <div class="fx-metric-l">平均延迟(ms)</div>
-            </div>
-            <div class="fx-metric">
-              <div class="fx-metric-v">{{ fmtMs(r.jitter) }}</div>
-              <div class="fx-metric-l">抖动(ms)</div>
-            </div>
-            <div class="fx-metric">
-              <div class="fx-metric-v">{{ (r.packetLoss ?? 0).toFixed(1) }}</div>
-              <div class="fx-metric-l">丢包率(%)</div>
-            </div>
-            <div class="fx-metric">
-              <NTag v-if="quality(r.averageTime, r.packetLoss)" :type="quality(r.averageTime, r.packetLoss)!.type" size="small" round>
-                {{ quality(r.averageTime, r.packetLoss)!.text }}
-              </NTag>
-              <span v-else class="fx-metric-v">-</span>
-              <div class="fx-metric-l">链路质量</div>
-            </div>
-          </div>
-
-          <div
-            v-if="r.success && r.category === 'LOOPBACK'"
-            style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"
-          >
-            <NTag size="small" :type="r.integrityOk ? 'success' : 'error'" round>
-              {{ r.integrityOk ? '数据完整' : '数据异常' }}
-            </NTag>
-            <NTag size="small" type="info" round>校验 {{ fmtBytes(r.bytesVerified) }}</NTag>
-            <NTag size="small" round>往返 {{ r.okRounds ?? 0 }}/{{ r.rounds ?? 0 }} 轮</NTag>
-          </div>
-
-          <NAlert
-            v-if="!r.success"
-            type="error"
-            :bordered="false"
-            style="margin-top:10px"
-            title="错误详情"
-          >
-            {{ r.message || '连接失败' }}
-          </NAlert>
-        </NCard>
-      </div>
-
-      <NEmpty v-if="!results.length" description="暂无诊断数据" style="padding:40px 0" />
-    </template>
-
-    <template #footer>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
-        <NButton @click="emit('update:show', false)">关闭</NButton>
-        <NButton type="primary" :loading="loading" @click="emit('retry')">重新诊断</NButton>
-      </div>
-    </template>
-  </NModal>
+      <DialogFooter class="border-t px-6 py-4"><Button variant="outline" @click="emit('update:show', false)">关闭</Button><Button :disabled="loading" @click="emit('retry')"><RefreshCw class="size-4" :class="{ 'animate-spin': loading }" />重新检查</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
-
-<style scoped>
-.fx-metric {
-  text-align: center;
-  padding: 8px 4px;
-  background: var(--bg-subtle);
-  border-radius: 10px;
-}
-.fx-metric-v {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--brand-500);
-  line-height: 1.2;
-}
-.fx-metric-l {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-</style>

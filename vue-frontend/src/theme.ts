@@ -1,49 +1,31 @@
 import type { GlobalThemeOverrides } from 'naive-ui'
 
+// Keep the remaining Naive UI screens aligned while the shadcn migration proceeds.
 const common = {
-  primaryColor: '#2563eb',
-  primaryColorHover: '#3b82f6',
-  primaryColorPressed: '#1d4ed8',
-  primaryColorSuppl: '#3b82f6',
-  successColor: '#18a058',
-  warningColor: '#f0a020',
-  errorColor: '#e04141',
-  infoColor: '#2563eb',
-  borderRadius: '10px',
-  fontFamily:
-    "Inter, 'Segoe UI', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  borderRadius: '8px',
+  fontFamily: '"Geist Variable", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+  successColor: '#16a34a',
+  warningColor: '#d97706',
+  errorColor: '#dc2626',
+  infoColor: '#71717a',
 }
-
 export const lightThemeOverrides: GlobalThemeOverrides = {
   common: {
     ...common,
-    bodyColor: '#f4f6fb',
-    cardColor: '#ffffff',
-    modalColor: '#ffffff',
-    popoverColor: '#ffffff',
+    primaryColor: '#18181b', primaryColorHover: '#3f3f46', primaryColorPressed: '#09090b', primaryColorSuppl: '#18181b',
+    bodyColor: '#ffffff', cardColor: '#ffffff', modalColor: '#ffffff', popoverColor: '#ffffff',
+    borderColor: '#e4e4e7', textColorBase: '#18181b',
   },
-  Card: {
-    borderRadius: '16px',
-  },
-  Button: {
-    borderRadiusMedium: '10px',
-  },
+  Card: { borderRadius: '12px' },
+  Button: { borderRadiusMedium: '8px' },
 }
-
 export const darkThemeOverrides: GlobalThemeOverrides = {
   common: {
     ...common,
-    bodyColor: '#0b1120',
-    cardColor: '#131a2a',
-    modalColor: '#131a2a',
-    popoverColor: '#1b2436',
-    borderColor: 'rgba(148, 163, 184, 0.16)',
+    primaryColor: '#e4e4e7', primaryColorHover: '#fafafa', primaryColorPressed: '#d4d4d8', primaryColorSuppl: '#e4e4e7',
+    bodyColor: '#0f0f10', cardColor: '#18181b', modalColor: '#18181b', popoverColor: '#18181b',
+    borderColor: '#2c2c30', textColorBase: '#f4f4f5',
   },
-  Card: {
-    borderRadius: '16px',
-    color: '#131a2a',
-  },
-  Button: {
-    borderRadiusMedium: '10px',
-  },
+  Card: { borderRadius: '12px', color: '#18181b' },
+  Button: { borderRadiusMedium: '8px', textColorPrimary: '#18181b', textColorHoverPrimary: '#18181b', textColorPressedPrimary: '#18181b' },
 }

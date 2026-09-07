@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NModal, NButton, NInput, NFormItem } from 'naive-ui'
+import { LoaderCircle } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { updatePassword } from '@/api'
 import { useToast } from '@/composables/useToast'
 import { safeLogout } from '@/utils/logout'
@@ -68,39 +71,17 @@ function onShow(v: boolean) {
   emit('update:show', v)
 }
 </script>
-
 <template>
-  <NModal
-    :show="props.show"
-    preset="card"
-    title="修改密码"
-    style="width: 460px; max-width: 94vw"
-    :bordered="false"
-    @update:show="onShow"
-  >
-    <NFormItem label="新用户名" :show-feedback="false" style="margin-bottom:14px">
-      <NInput v-model:value="form.newUsername" placeholder="请输入新用户名（至少3位）" />
-    </NFormItem>
-    <NFormItem label="当前密码" :show-feedback="false" style="margin-bottom:14px">
-      <NInput v-model:value="form.currentPassword" type="password" show-password-on="click" placeholder="请输入当前密码" />
-    </NFormItem>
-    <NFormItem label="新密码" :show-feedback="false" style="margin-bottom:14px">
-      <NInput v-model:value="form.newPassword" type="password" show-password-on="click" placeholder="请输入新密码（至少6位）" />
-    </NFormItem>
-    <NFormItem label="确认密码" :show-feedback="false">
-      <NInput
-        v-model:value="form.confirmPassword"
-        type="password"
-        show-password-on="click"
-        placeholder="请再次输入新密码"
-        @keyup.enter="submit"
-      />
-    </NFormItem>
-    <template #footer>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
-        <NButton @click="onShow(false)">取消</NButton>
-        <NButton type="primary" :loading="loading" @click="submit">确定</NButton>
-      </div>
-    </template>
-  </NModal>
+  <Dialog :open="props.show" @update:open="onShow">
+    <DialogContent class="sm:max-w-md">
+      <DialogHeader><DialogTitle>修改账户信息</DialogTitle><DialogDescription>修改后需要使用新的账户信息重新登录。</DialogDescription></DialogHeader>
+      <form class="space-y-4" @submit.prevent="submit">
+        <div class="space-y-2"><label for="new-account-name" class="field-label">新用户名</label><Input id="new-account-name" v-model="form.newUsername" autocomplete="username" placeholder="至少 3 个字符" /></div>
+        <div class="space-y-2"><label for="current-password" class="field-label">当前密码</label><Input id="current-password" v-model="form.currentPassword" type="password" autocomplete="current-password" /></div>
+        <div class="space-y-2"><label for="new-password" class="field-label">新密码</label><Input id="new-password" v-model="form.newPassword" type="password" autocomplete="new-password" placeholder="至少 6 个字符" /></div>
+        <div class="space-y-2"><label for="confirm-password" class="field-label">确认新密码</label><Input id="confirm-password" v-model="form.confirmPassword" type="password" autocomplete="new-password" /></div>
+        <DialogFooter class="pt-2"><Button type="button" variant="outline" @click="onShow(false)">取消</Button><Button type="submit" :disabled="loading"><LoaderCircle v-if="loading" class="size-4 animate-spin" />保存修改</Button></DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>
 </template>

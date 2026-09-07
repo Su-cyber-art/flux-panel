@@ -1,55 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { NModal, NButton, NTag } from 'naive-ui'
+import { Copy } from '@lucide/vue'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { copyText } from '@/utils/clipboard'
 import { useToast } from '@/composables/useToast'
-
-const props = defineProps<{
-  show: boolean
-  title: string
-  addresses: string[]
-}>()
-const emit = defineEmits<{ (e: 'update:show', v: boolean): void }>()
+const props = defineProps<{ show: boolean; title: string; addresses: string[] }>()
+const emit = defineEmits<{ (e: 'update:show', value: boolean): void }>()
 const toast = useToast()
-
-const list = computed(() => props.addresses.filter(Boolean))
-
-async function copyOne(addr: string) {
-  const ok = await copyText(addr)
-  ok ? toast.success('已复制') : toast.error('复制失败')
-}
-async function copyAll() {
-  const ok = await copyText(list.value.join('\n'))
-  ok ? toast.success('已复制全部') : toast.error('复制失败')
+const addresses = computed(() => props.addresses.filter(Boolean))
+async function copy(value: string) {
+  const result = await copyText(value)
+  result ? toast.success('地址已复制') : toast.error('复制失败')
 }
 </script>
-
 <template>
-  <NModal
-    :show="show"
-    preset="card"
-    :title="`${title} (${list.length}个)`"
-    style="width: 520px; max-width: 94vw"
-    :bordered="false"
-    @update:show="(v: boolean) => emit('update:show', v)"
-  >
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-      <NButton size="small" type="primary" secondary @click="copyAll">复制全部</NButton>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow-y:auto">
-      <div
-        v-for="(addr, i) in list"
-        :key="i"
-        style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;background:var(--bg-subtle);border-radius:10px"
-      >
-        <NTag :bordered="false" class="fx-mono" style="background:transparent">{{ addr }}</NTag>
-        <NButton size="tiny" quaternary @click="copyOne(addr)">复制</NButton>
+  <Dialog :open="show" @update:open="value => emit('update:show', value)">
+    <DialogContent class="sm:max-w-lg">
+      <DialogHeader><DialogTitle>{{ title }}</DialogTitle><DialogDescription>共 {{ addresses.length }} 个地址，点击右侧按钮复制。</DialogDescription></DialogHeader>
+      <div class="max-h-[50dvh] divide-y overflow-y-auto rounded-lg border">
+        <div v-for="address in addresses" :key="address" class="flex items-center gap-3 px-4 py-3">
+          <code class="min-w-0 flex-1 break-all text-xs">{{ address }}</code><Button variant="ghost" size="icon" class="size-8" :aria-label="'复制 ' + address" @click="copy(address)"><Copy class="size-3.5" /></Button>
+        </div>
       </div>
-    </div>
-    <template #footer>
-      <div style="display:flex;justify-content:flex-end">
-        <NButton @click="emit('update:show', false)">关闭</NButton>
-      </div>
-    </template>
-  </NModal>
+      <DialogFooter><Button variant="outline" @click="emit('update:show', false)">关闭</Button><Button @click="copy(addresses.join('\n'))"><Copy class="size-4" />复制全部</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>

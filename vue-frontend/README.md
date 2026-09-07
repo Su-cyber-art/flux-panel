@@ -1,8 +1,37 @@
 # flux-panel · Vue 3 前端（重构版）
 
-基于 **Vue 3 + Vite + TypeScript + Naive UI + Pinia + vue-router + ECharts** 全面重写的管理面板前端，替代原 `vite-frontend`（React 18 + HeroUI）。
+基于 **Vue 3 + Vite + TypeScript + Pinia + vue-router + ECharts** 的管理面板，正在逐页迁移到 **shadcn-vue + Tailwind CSS**。现有 Naive UI 页面在过渡期间保持可用。
 
-界面更现代、动效更丝滑，暗色模式跟随系统并支持手动切换；桌面端为侧边栏布局、移动端（H5）为底部标签栏布局，自动切换。后端接口、鉴权方式、部署方式与原前端完全一致，可直接替换。
+深浅色模式支持手动切换与跟随系统；桌面使用可折叠侧栏，手机和平板使用抽屉导航。后端接口、鉴权方式和部署方式保持兼容。
+
+
+## shadcn-vue 样板
+
+当前已将导航、转发管理页和共用弹层迁移到 shadcn-vue / Reka UI / Tailwind CSS。
+组件源码位于 `src/components/ui/`，转发功能分为 `Forward.vue`、
+`features/forwards/ForwardTable.vue`、`ForwardDialogs.vue` 和 `useForwardManagement.ts`。
+其余页面暂使用 Naive UI，并通过中性主题保持视觉一致，后续逐页迁移。
+
+不依赖 Java/MySQL 的本地界面预览：
+
+```bash
+npm run dev:preview
+```
+
+默认访问 `http://127.0.0.1:3000/`，使用 `demo / demo123` 登录。预览使用可重置的
+模拟数据，不连接真实节点。端口占用时可指定：
+
+```bash
+UI_PREVIEW_PORT=3001 UI_PREVIEW_API_PORT=17366 npm run dev:preview
+```
+
+生产构建不包含预览服务。正常开发使用 `npm run dev`，通过 Vite 代理访问
+`VITE_DEV_BACKEND`（默认 `http://127.0.0.1:6365`）；开发环境的 `VITE_API_BASE`
+留空以启用同源代理。
+
+组件命令行工具保留在开发依赖，字体通过 `@fontsource-variable/geist` 随应用
+打包。轻提示统一使用 `useToast()`，底层已切换为 vue-sonner。
+
 
 ## 目录结构
 
@@ -12,7 +41,7 @@ src/
   router/         # 路由与登录守卫
   stores/         # Pinia：auth（会话）、config（站点配置缓存）
   composables/    # useTheme / useH5 / useToast / useNodeSocket
-  layouts/        # AdminLayout（桌面）/ H5Layout / H5SimpleLayout / BlankLayout
+  layouts/        # AdminLayout（响应式）/ SidebarNavigation / BlankLayout
   components/     # Logo / PageContainer / EmptyState / ThemeToggle /
                   # AddressModal / ChangePasswordModal / DiagnosisDialog
   pages/          # 11 个页面：Login / ChangePassword / Dashboard / Forward /
@@ -42,7 +71,7 @@ npm run build          # 产物在 dist/
 npm run preview        # 本地预览产物
 ```
 
-> 构建使用 esbuild 转译；CI 与发布流水线会先执行 `npm run type-check`。
+> CI 与发布流水线会先执行 `npm run type-check`，再通过 Vite 构建生产产物。
 
 ## Docker / 部署（与原前端一致）
 
@@ -65,6 +94,6 @@ npm run preview        # 本地预览产物
 
 ## 相比原前端的增强
 
-- 统一的品牌化设计系统与卡片悬浮/路由过渡动效，观感更精致。
+- 中性黑白主题、按职责拆分的转发列表与表单，以及一致的操作菜单。
 - 明暗主题：跟随系统 + 顶栏一键切换（原版仅跟随系统）。
 - 诊断结果弹窗（`DiagnosisDialog`）配合后端“真实链路诊断”，按 **入口监听 / 逐跳建连 / 目标可达 / 端到端数据回环** 分类展示真实延迟、抖动、丢包与字节级完整性校验结果。

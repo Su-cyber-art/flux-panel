@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const isUiPreview = import.meta.env.DEV && import.meta.env.VITE_UI_PREVIEW === 'true'
 import { reactive, ref, computed, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { NInput, NButton } from 'naive-ui'
@@ -206,7 +207,7 @@ onUnmounted(() => {
           <Logo :size="40" />
         </div>
         <h1 class="login-title">登录</h1>
-        <p class="login-subtitle">请输入您的账号信息</p>
+        <p class="login-subtitle">{{ isUiPreview ? '本地界面预览：demo / demo123' : '请输入您的账号信息' }}</p>
       </header>
 
       <div class="login-form">
