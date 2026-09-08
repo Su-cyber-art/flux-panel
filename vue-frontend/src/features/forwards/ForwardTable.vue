@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { Activity, ArrowDown, ArrowDownLeft, ArrowUp, ArrowUpRight, Check, CircleAlert, CirclePause, Copy, Ellipsis, GripVertical, LoaderCircle, Network, Pencil, RefreshCw, Trash2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,11 @@ import type { ForwardController } from './useForwardManagement'
 const props = defineProps<{ controller: ForwardController; items: Forward[]; canReorder: boolean; hasFilters: boolean }>()
 const emit = defineEmits<{ (e: 'reset-filters'): void }>()
 const vm = reactive(props.controller)
+// Match the table's Tailwind breakpoints so hidden controls remain available in the menu.
+const switchVisible = useMediaQuery('(min-width: 40rem)')
+const entryVisible = useMediaQuery('(min-width: 48rem)')
+const dragVisible = useMediaQuery('(min-width: 64rem)')
+const targetVisible = useMediaQuery('(min-width: 80rem)')
 function indexOf(row: Forward) { return vm.sortedForwards.findIndex(item => item.id === row.id) }
 function move(row: Forward, direction: number) {
   const index = indexOf(row)
@@ -44,7 +50,7 @@ function syncTone(row: Forward) {
           <TableHead class="hidden md:table-cell">入口地址</TableHead>
           <TableHead class="hidden xl:table-cell">目标地址</TableHead>
           <TableHead class="hidden w-[120px] lg:table-cell">已用流量</TableHead>
-          <TableHead class="w-12 pr-4 text-right sm:w-[88px] sm:pr-5"><span class="sr-only">操作</span></TableHead>
+          <TableHead class="w-12 pr-4 text-right sm:w-[124px] sm:pr-5"><span class="sr-only">操作</span></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody v-if="vm.loading">
@@ -59,7 +65,8 @@ function syncTone(row: Forward) {
             @dragover.prevent @drop="canReorder && vm.onCardDrop(indexOf(row), $event)">
             <TableCell class="hidden pr-0 pl-3 lg:table-cell">
               <button v-if="canReorder" type="button" class="flex size-6 cursor-grab items-center justify-center rounded text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing"
-                :aria-label="'拖动排序：' + row.name" draggable="true" @dragstart="vm.onGripDragStart(indexOf(row), $event)" @dragend="vm.dragIndex = null"><GripVertical class="size-3.5" /></button>
+                :aria-label="'排序：' + row.name + '，可拖动或按上下方向键移动'" draggable="true" @dragstart="vm.onGripDragStart(indexOf(row), $event)" @dragend="vm.dragIndex = null"
+                @keydown.up.prevent="move(row, -1)" @keydown.down.prevent="move(row, 1)"><GripVertical class="size-3.5" /></button>
             </TableCell>
             <TableCell class="max-w-[150px] py-4 pl-4 sm:max-w-[220px] sm:pl-5 lg:pl-2">
               <button class="block max-w-full truncate text-left text-sm font-medium hover:underline underline-offset-4" :disabled="row.deleteRequested" @click="vm.openEdit(row)">{{ row.name }}</button>
@@ -100,21 +107,25 @@ function syncTone(row: Forward) {
               <div class="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums"><ArrowDownLeft class="size-3" />{{ formatFlow(row.outFlow) }}</div>
             </TableCell>
             <TableCell class="pr-4">
-              <div class="flex items-center justify-end gap-2">
+              <div class="flex flex-col items-end justify-end gap-1 sm:flex-row sm:items-center sm:gap-2">
                 <Switch class="hidden shrink-0 sm:inline-flex" :model-value="row.serviceRunning" :aria-label="(row.serviceRunning ? '暂停 ' : '恢复 ') + row.name"
                   :disabled="vm.togglingIds.has(row.id) || row.deleteRequested || ![0, 1].includes(row.status)" @update:model-value="vm.handleServiceToggle(row)" />
+                <Tooltip><TooltipTrigger as-child>
+                  <Button variant="ghost" size="icon" class="size-7 shrink-0" :aria-label="'连接诊断：' + row.name" :disabled="row.deleteRequested || vm.diagnosis.loading" @click="vm.handleDiagnose(row)">
+                    <LoaderCircle v-if="vm.diagnosis.loading && vm.diagnosis.current?.id === row.id" class="size-4 animate-spin" /><Activity v-else class="size-4" />
+                  </Button>
+                </TooltipTrigger><TooltipContent>连接诊断</TooltipContent></Tooltip>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="size-7" :aria-label="'操作 ' + row.name"><Ellipsis class="size-4" /></Button></DropdownMenuTrigger>
                   <DropdownMenuContent align="end" class="w-44">
                     <DropdownMenuLabel class="max-w-40 truncate text-xs text-muted-foreground">{{ row.name }}</DropdownMenuLabel>
                     <DropdownMenuItem :disabled="row.deleteRequested" @select="vm.openEdit(row)"><Pencil class="size-4" />编辑转发</DropdownMenuItem>
-                    <DropdownMenuItem :disabled="row.deleteRequested" @select="vm.handleDiagnose(row)"><Activity class="size-4" />连接诊断</DropdownMenuItem>
-                    <DropdownMenuItem :disabled="row.deleteRequested || vm.togglingIds.has(row.id) || ![0, 1].includes(row.status)" @select="vm.handleServiceToggle(row)"><CirclePause class="size-4" />{{ row.serviceRunning ? '暂停服务' : '恢复服务' }}</DropdownMenuItem>
+                    <DropdownMenuItem v-if="!switchVisible" :disabled="row.deleteRequested || vm.togglingIds.has(row.id) || ![0, 1].includes(row.status)" @select="vm.handleServiceToggle(row)"><CirclePause class="size-4" />{{ row.serviceRunning ? '暂停服务' : '恢复服务' }}</DropdownMenuItem>
                     <DropdownMenuItem v-if="row.syncTaskStatus === 'FAILED'" @select="vm.handleRetrySync(row)"><RefreshCw class="size-4" />重试同步</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem @select="vm.showAddressModal(row.inIp, row.inPort, '入口端口')"><Copy class="size-4" />复制入口地址</DropdownMenuItem>
-                    <DropdownMenuItem @select="vm.showAddressModal(row.remoteAddr, null, '目标地址')"><Copy class="size-4" />复制目标地址</DropdownMenuItem>
-                    <template v-if="canReorder"><DropdownMenuItem :disabled="indexOf(row) === 0" @select="move(row, -1)"><ArrowUp class="size-4" />上移</DropdownMenuItem><DropdownMenuItem :disabled="indexOf(row) === vm.sortedForwards.length - 1" @select="move(row, 1)"><ArrowDown class="size-4" />下移</DropdownMenuItem></template>
+                    <DropdownMenuSeparator v-if="!targetVisible" />
+                    <DropdownMenuItem v-if="!entryVisible" @select="vm.showAddressModal(row.inIp, row.inPort, '入口端口')"><Copy class="size-4" />复制入口地址</DropdownMenuItem>
+                    <DropdownMenuItem v-if="!targetVisible" @select="vm.showAddressModal(row.remoteAddr, null, '目标地址')"><Copy class="size-4" />复制目标地址</DropdownMenuItem>
+                    <template v-if="canReorder && !dragVisible"><DropdownMenuItem :disabled="indexOf(row) === 0" @select="move(row, -1)"><ArrowUp class="size-4" />上移</DropdownMenuItem><DropdownMenuItem :disabled="indexOf(row) === vm.sortedForwards.length - 1" @select="move(row, 1)"><ArrowDown class="size-4" />下移</DropdownMenuItem></template>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem v-if="row.deleteRequested" class="text-destructive focus:text-destructive" @select="vm.requestForceDelete(row)"><Trash2 class="size-4" />强制删除记录</DropdownMenuItem>
                     <DropdownMenuItem v-else class="text-destructive focus:text-destructive" @select="vm.openDelete(row)"><Trash2 class="size-4" />删除转发</DropdownMenuItem>
